@@ -3,6 +3,7 @@ import gymnasium as gym
 import random
 from gymnasium import Env, spaces
 from gymnasium.spaces import Discrete, Box, MultiDiscrete
+import pandas as pd
 
 
 class RicEnv(Env):
@@ -10,12 +11,16 @@ class RicEnv(Env):
         self.action_space = Box(low=np.array([-2, -2]), high=np.array([2, 2]), dtype=int)
         self.observation_space = Box(low=np.array([0, -2, -2]), high=np.array([10, 2, 2]), dtype=int)
 
-        self.state = np.array([10, 2, 2]) # remember: it's required prbs, not the amount that's there
+        self.state = np.array([5, 2, 2]) # remember: it's required prbs, not the amount that's there
 
     def step(self, action):
-        prev_state = self.state
+        prev_state = tuple(self.state)
 
-        prbs_inf = self.state[0] - (action[0] + action[1])
+        new_prbs_inf = self.state[0] - (action[0] + action[1])
+        if new_prbs_inf > 10 or new_prbs_inf < 0:
+            prbs_inf = self.state[0]
+        else:
+            prbs_inf = new_prbs_inf
         # generate new required prbs randomly
         if prbs_inf < 5:
             prbs_req_s1 = random.randint(-2,0)
@@ -27,7 +32,7 @@ class RicEnv(Env):
         self.state = np.array([prbs_inf, prbs_req_s1, prbs_req_s2])
 
         # else if slice gets the num prbs it requires, then reward
-        if (action[0] == prev_state[1]) and (action[1] == prev_state[2]):
+        if action[0] == prev_state[1] and action[1] == prev_state[2]:
             reward = 1
         else:
             reward = 0
@@ -35,36 +40,47 @@ class RicEnv(Env):
         info = {}
         done = False
         truncated = False
-        return self.state, reward, done, truncated, info
+        return tuple(self.state), reward, done, truncated, info
 
 
 # create environment
 env = RicEnv()
+state = tuple(env.state)
+
 # initialize q table
-q_table = np.zeros([250, 25])
+prbs_inf_states = np.arange(0, 11)
+prbs_req_s1_states = np.arange(-2, 3)
+prbs_req_s2_states = np.arange(-2, 3)
+q_values = np.zeros([275, 25])
+row_indices = pd.MultiIndex.from_product([prbs_inf_states, prbs_req_s1_states, prbs_req_s2_states])
+action1_space = np.arange(-2, 3)
+action2_space = np.arange(-2, 3)
+col_indices = pd.MultiIndex.from_product([action1_space, action2_space])
+q_table = pd.DataFrame(q_values, columns=col_indices, index=row_indices)
 
 # Hyperparameters
 alpha = 0.1
 gamma = 0.6
-epsilon = 0.99
+epsilon = 0.7
 
 # Training
 for i in range(1, 1000):
     # select action (explore vs exploit)
     if random.uniform(0, 1) < epsilon:
-        action = env.action_space.sample()  # Explore action space
+        action = tuple(env.action_space.sample())  # Explore action space
     else:
-        action = np.argmax(q_table[env.state])  # Exploit learned values
-    print(action)
+        action = q_table.loc[state].idxmax()  # Exploit learned values
 
     # move 1 step forward
+    state = tuple(env.state)
     next_state, reward, done, truncated, info = env.step(action)
     # update q-value
-    old_value = q_table[env.state, action]
-    next_max = np.max(q_table[next_state])
-    new_value = (1 - alpha) * old_value + alpha * (reward + gamma * next_max)
-    q_table[env.state, action] = new_value
+    # old_value = q_table.loc[state, action]
+    # next_max = q_table.loc[next_state].max()
+    # new_value = (1 - alpha) * old_value + alpha * (reward + gamma * next_max)
+    new_value = reward
+    q_table.loc[state, action] = new_value
     # update state
     state = next_state
 
-print(q_table)
+q_table.to_csv('file_name.csv')
