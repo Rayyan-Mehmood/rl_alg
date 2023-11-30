@@ -4,39 +4,46 @@ import random
 from gymnasium import Env, spaces
 from gymnasium.spaces import Discrete, Box, MultiDiscrete
 import pandas as pd
+import matplotlib.pyplot as plot
 
 
 class RicEnv(Env):
     def __init__(self):
         # Here, the bounds are inclusive
-        self.action_space = Box(low=np.array([-10, -10]), high=np.array([10, 10]), dtype=int)
-        self.observation_space = Box(low=np.array([0, -10, -10]), high=np.array([50, 10, 10]), dtype=int)
+        self.action_space = Box(low=np.array([-5, -5]), high=np.array([5, 5]), dtype=int)
+        self.observation_space = Box(low=np.array([0, -5, -5]), high=np.array([100, 5, 5]), dtype=int)
 
-        self.state = np.array([5, 2, 2]) # remember: it's required prbs, not the amount that's there
+        # Creating function of req_prbs
+        sine_time_range = np.arange(0, 10, 0.5)
+        self.sine_amplitude = np.rint(5 * np.sin(sine_time_range))
+        self.time = 0
+        self.state = np.array([50, self.sine_amplitude[self.time], self.sine_amplitude[self.time]])
+        # remember: it's required prbs, not the amount that's there
 
     def step(self, action):
+        # save the current state
         prev_state = tuple(self.state)
+        # update the state
+        prbs_inf = self.state[0] - action[0] - action[1]
+        self.time = self.time + 1  # update time
+        if self.time > 19:
+            self.time = 0 # reset time
+        self.state = np.array([prbs_inf, self.sine_amplitude[self.time], self.sine_amplitude[self.time]])
 
-        new_prbs_inf = self.state[0] - (action[0] + action[1])
-        if new_prbs_inf > 10 or new_prbs_inf < 0:
-            prbs_inf = self.state[0]
-        else:
-            prbs_inf = new_prbs_inf
-        # generate new required prbs randomly
-        if prbs_inf < 5:
-            prbs_req_s1 = random.randint(-2,0)
-            prbs_req_s2 = random.randint(-2, 0)
-        else:
-            prbs_req_s1 = random.randint(0, 2)
-            prbs_req_s2 = random.randint(0, 2)
-
-        self.state = np.array([prbs_inf, prbs_req_s1, prbs_req_s2])
-
-        # else if slice gets the num prbs it requires, then reward
+        # calculate reward
+        # if slice gets the num prbs it requires, then reward
         if action[0] == prev_state[1] and action[1] == prev_state[2]:
             reward = 1
         else:
-            reward = 0
+            reward = -1
+
+        if self.state[0] < 0:
+            reward = -2
+            self.state[0] = 0
+        elif self.state[0] > 100:
+            reward = -2
+            self.state[0] = 100
+
 
         info = {}
         done = False
@@ -50,31 +57,34 @@ state = tuple(env.state)
 
 # initialize q table
 # Here, the bounds are exclusive
-prbs_inf_states = np.arange(0, 51)
-prbs_req_s1_states = np.arange(-10, 11)
-prbs_req_s2_states = np.arange(-10, 11)
-q_values = np.zeros([22491, 441])
+prbs_inf_states = np.arange(0, 101)
+prbs_req_s1_states = np.arange(-5, 6)
+prbs_req_s2_states = np.arange(-5, 6)
+q_values = np.zeros([12221, 121])
 row_indices = pd.MultiIndex.from_product([prbs_inf_states, prbs_req_s1_states, prbs_req_s2_states])
-action1_space = np.arange(-10, 11)
-action2_space = np.arange(-10, 11)
+action1_space = np.arange(-5, 6)
+action2_space = np.arange(-5, 6)
 col_indices = pd.MultiIndex.from_product([action1_space, action2_space])
 q_table = pd.DataFrame(q_values, columns=col_indices, index=row_indices)
 
 # Hyperparameters
 alpha = 0.1
 gamma = 0.6
-epsilon = 0.7
+epsilon = 0.99
 
 # Training
-for i in range(1, 1000):
+for i in range(1, 100000):
+    print(i)
     # select action (explore vs exploit)
     if random.uniform(0, 1) < epsilon:
         action = tuple(env.action_space.sample())  # Explore action space
+        # while (prbs_inf - action) < 0 or > 50, pick a new action
+        while (state[0] - action[0] - action[1]) < 0 or (state[0] - action[0] - action[1]) > 100:
+            action = tuple(env.action_space.sample())  # Explore action space
     else:
         action = q_table.loc[state].idxmax()  # Exploit learned values
 
     # move 1 step forward
-    state = tuple(env.state)
     next_state, reward, done, truncated, info = env.step(action)
     # update q-value
     # old_value = q_table.loc[state, action]
@@ -86,3 +96,13 @@ for i in range(1, 1000):
     state = next_state
 
 q_table.to_csv('file_name.csv')
+
+# Testing
+action_record = np.array(20)
+for i in range(1, 20):
+    # select action (exploit)
+    action = q_table.loc[state].idxmax()  # Exploit learned values
+    # move 1 step forward
+    next_state, reward, done, truncated, info = env.step(action)
+    # update state
+    state = next_state
