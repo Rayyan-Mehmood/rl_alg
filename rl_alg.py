@@ -8,8 +8,9 @@ import pandas as pd
 
 class RicEnv(Env):
     def __init__(self):
-        self.action_space = Box(low=np.array([-2, -2]), high=np.array([2, 2]), dtype=int)
-        self.observation_space = Box(low=np.array([0, -2, -2]), high=np.array([10, 2, 2]), dtype=int)
+        # Here, the bounds are inclusive
+        self.action_space = Box(low=np.array([-10, -10]), high=np.array([10, 10]), dtype=int)
+        self.observation_space = Box(low=np.array([0, -10, -10]), high=np.array([50, 10, 10]), dtype=int)
 
         self.state = np.array([5, 2, 2]) # remember: it's required prbs, not the amount that's there
 
@@ -48,13 +49,14 @@ env = RicEnv()
 state = tuple(env.state)
 
 # initialize q table
-prbs_inf_states = np.arange(0, 11)
-prbs_req_s1_states = np.arange(-2, 3)
-prbs_req_s2_states = np.arange(-2, 3)
-q_values = np.zeros([275, 25])
+# Here, the bounds are exclusive
+prbs_inf_states = np.arange(0, 51)
+prbs_req_s1_states = np.arange(-10, 11)
+prbs_req_s2_states = np.arange(-10, 11)
+q_values = np.zeros([22491, 441])
 row_indices = pd.MultiIndex.from_product([prbs_inf_states, prbs_req_s1_states, prbs_req_s2_states])
-action1_space = np.arange(-2, 3)
-action2_space = np.arange(-2, 3)
+action1_space = np.arange(-10, 11)
+action2_space = np.arange(-10, 11)
 col_indices = pd.MultiIndex.from_product([action1_space, action2_space])
 q_table = pd.DataFrame(q_values, columns=col_indices, index=row_indices)
 
