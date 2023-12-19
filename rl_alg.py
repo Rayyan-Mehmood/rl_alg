@@ -6,18 +6,19 @@ from gymnasium.spaces import Discrete, Box, MultiDiscrete
 import pandas as pd
 import matplotlib.pyplot as plot
 
+max_prbs_inf = 25
 
 class RicEnv(Env):
     def __init__(self):
         # Here, the bounds are inclusive
-        self.action_space = Box(low=np.array([-5, -5]), high=np.array([5, 5]), dtype=int)
-        self.observation_space = Box(low=np.array([0, -5, -5]), high=np.array([100, 5, 5]), dtype=int)
+        self.action_space = Box(low=np.array([-2, -2]), high=np.array([2, 2]), dtype=int)
+        self.observation_space = Box(low=np.array([0, -2, -2]), high=np.array([max_prbs_inf, 2, 2]), dtype=int)
 
         # Creating function of req_prbs
         sine_time_range = np.arange(0, 10, 0.5)
-        self.sine_amplitude = np.rint(5 * np.sin(sine_time_range))
+        self.sine_amplitude = np.rint(2 * np.sin(sine_time_range))
         self.time = 0
-        self.state = np.array([50, self.sine_amplitude[self.time], self.sine_amplitude[self.time]])
+        self.state = np.array([13, self.sine_amplitude[self.time], self.sine_amplitude[self.time]])
         # remember: it's required prbs, not the amount that's there
 
     def step(self, action):
@@ -40,9 +41,9 @@ class RicEnv(Env):
         if self.state[0] < 0:
             reward = -2
             self.state[0] = 0
-        elif self.state[0] > 100:
+        elif self.state[0] > max_prbs_inf:
             reward = -2
-            self.state[0] = 100
+            self.state[0] = max_prbs_inf
 
 
         info = {}
@@ -56,31 +57,33 @@ env = RicEnv()
 state = tuple(env.state)
 
 # initialize q table
-# Here, the bounds are exclusive
-prbs_inf_states = np.arange(0, 101)
-prbs_req_s1_states = np.arange(-5, 6)
-prbs_req_s2_states = np.arange(-5, 6)
-q_values = np.zeros([12221, 121])
+# Here, the upper bound is exclusive
+prbs_inf_states = np.arange(0, 26)
+prbs_req_s1_states = np.arange(-2, 3)
+prbs_req_s2_states = np.arange(-2, 3)
+q_values = np.zeros([650, 25])
 row_indices = pd.MultiIndex.from_product([prbs_inf_states, prbs_req_s1_states, prbs_req_s2_states])
-action1_space = np.arange(-5, 6)
-action2_space = np.arange(-5, 6)
+action1_space = np.arange(-2, 3)
+action2_space = np.arange(-2, 3)
 col_indices = pd.MultiIndex.from_product([action1_space, action2_space])
 q_table = pd.DataFrame(q_values, columns=col_indices, index=row_indices)
 
 # Hyperparameters
 alpha = 0.1
 gamma = 0.6
-epsilon = 0.99
+epsilon = 0.9999
 
 # Training
-for i in range(1, 100000):
+for i in range(1, 10000):
     print(i)
     # select action (explore vs exploit)
     if random.uniform(0, 1) < epsilon:
         action = tuple(env.action_space.sample())  # Explore action space
         # while (prbs_inf - action) < 0 or > 50, pick a new action
-        while (state[0] - action[0] - action[1]) < 0 or (state[0] - action[0] - action[1]) > 100:
+        # the only time this condition could be violated is in the else
+        while (state[0] - action[0] - action[1]) < 0 or (state[0] - action[0] - action[1]) > max_prbs_inf:
             action = tuple(env.action_space.sample())  # Explore action space
+            # print("Prbs_inf: {} and Action: {}".format(state[0], action))
     else:
         action = q_table.loc[state].idxmax()  # Exploit learned values
 
@@ -98,11 +101,20 @@ for i in range(1, 100000):
 q_table.to_csv('file_name.csv')
 
 # Testing
-action_record = np.array(20)
-for i in range(1, 20):
+env.time = 0
+action_s1_record = np.zeros(20)
+action_s2_record = np.zeros(20)
+for i in range(0, 20): # upper bound is exclusive
     # select action (exploit)
     action = q_table.loc[state].idxmax()  # Exploit learned values
+    action_s1_record[i-1] = action[0]
+    action_s2_record[i-1] = action[1]
+    print("{} {} {}".format(env.sine_amplitude[env.time], action[0], action[1]))
     # move 1 step forward
     next_state, reward, done, truncated, info = env.step(action)
     # update state
     state = next_state
+
+print(env.sine_amplitude)
+# print(action_s1_record)
+# print(action_s2_record)
