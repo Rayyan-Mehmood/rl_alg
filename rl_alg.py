@@ -69,8 +69,8 @@ col_indices = pd.MultiIndex.from_product([action1_space, action2_space])
 q_table = pd.DataFrame(q_values, columns=col_indices, index=row_indices)
 
 # Hyperparameters
-alpha = 0.1
-gamma = 0.6
+alpha = 0.7
+gamma = 0.001
 epsilon = 0.9999
 
 # Training
@@ -90,10 +90,10 @@ for i in range(1, 10000):
     # move 1 step forward
     next_state, reward, done, truncated, info = env.step(action)
     # update q-value
-    # old_value = q_table.loc[state, action]
-    # next_max = q_table.loc[next_state].max()
-    # new_value = (1 - alpha) * old_value + alpha * (reward + gamma * next_max)
-    new_value = reward
+    old_value = q_table.loc[state, action]
+    next_max = q_table.loc[next_state].max()
+    new_value = (1 - alpha) * old_value + alpha * (reward + gamma * next_max)
+    # new_value = reward # not using bellman equation
     q_table.loc[state, action] = new_value
     # update state
     state = next_state
