@@ -39,10 +39,10 @@ class RicEnv(Env):
             reward = -1
 
         if self.state[0] < 0:
-            reward = -2
+            reward = -10
             self.state[0] = 0
         elif self.state[0] > max_prbs_inf:
-            reward = -2
+            reward = -10
             self.state[0] = max_prbs_inf
 
 
@@ -79,11 +79,6 @@ for i in range(1, 10000):
     # select action (explore vs exploit)
     if random.uniform(0, 1) < epsilon:
         action = tuple(env.action_space.sample())  # Explore action space
-        # while (prbs_inf - action) < 0 or > 50, pick a new action
-        # the only time this condition could be violated is in the else
-        while (state[0] - action[0] - action[1]) < 0 or (state[0] - action[0] - action[1]) > max_prbs_inf:
-            action = tuple(env.action_space.sample())  # Explore action space
-            # print("Prbs_inf: {} and Action: {}".format(state[0], action))
     else:
         action = q_table.loc[state].idxmax()  # Exploit learned values
 
@@ -98,23 +93,26 @@ for i in range(1, 10000):
     # update state
     state = next_state
 
-q_table.to_csv('file_name.csv')
+q_table.to_csv('q_table.csv')
 
 # Testing
+# initializing the environment
 env.time = 0
+env.state = np.array([15, env.sine_amplitude[env.time], env.sine_amplitude[env.time]])
 action_s1_record = np.zeros(20)
 action_s2_record = np.zeros(20)
+print("Avail pRBs \t Req pRBs \t Alloc pRBs S1 \t Alloc pRBs S2")
 for i in range(0, 20): # upper bound is exclusive
     # select action (exploit)
     action = q_table.loc[state].idxmax()  # Exploit learned values
     action_s1_record[i-1] = action[0]
     action_s2_record[i-1] = action[1]
-    print("{} {} {}".format(env.sine_amplitude[env.time], action[0], action[1]))
+    print("{} \t \t {} \t \t {}   \t \t \t {}".format(env.state[0], env.sine_amplitude[env.time], action[0], action[1]))
     # move 1 step forward
     next_state, reward, done, truncated, info = env.step(action)
     # update state
     state = next_state
 
-print(env.sine_amplitude)
+# print(env.sine_amplitude)
 # print(action_s1_record)
 # print(action_s2_record)
