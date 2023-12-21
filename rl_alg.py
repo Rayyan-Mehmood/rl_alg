@@ -7,16 +7,18 @@ import pandas as pd
 import matplotlib.pyplot as plot
 
 max_prbs_inf = 25
+max_req_prbs = 2 # max_req_prbs = max_action
+min_req_prbs = -2
 
 class RicEnv(Env):
     def __init__(self):
         # Here, the bounds are inclusive
-        self.action_space = Box(low=np.array([-2, -2]), high=np.array([2, 2]), dtype=int)
-        self.observation_space = Box(low=np.array([0, -2, -2]), high=np.array([max_prbs_inf, 2, 2]), dtype=int)
+        self.action_space = Box(low=np.array([min_req_prbs, min_req_prbs]), high=np.array([max_req_prbs, max_req_prbs]), dtype=int)
+        self.observation_space = Box(low=np.array([0, min_req_prbs, min_req_prbs]), high=np.array([max_prbs_inf, max_req_prbs, max_req_prbs]), dtype=int)
 
         # Creating function of req_prbs
         sine_time_range = np.arange(0, 10, 0.5)
-        self.sine_amplitude = np.rint(2 * np.sin(sine_time_range))
+        self.sine_amplitude = np.rint(max_req_prbs * np.sin(sine_time_range))
         self.time = 0
         self.state = np.array([13, self.sine_amplitude[self.time], self.sine_amplitude[self.time]])
         # remember: it's required prbs, not the amount that's there
@@ -58,13 +60,14 @@ state = tuple(env.state)
 
 # initialize q table
 # Here, the upper bound is exclusive
-prbs_inf_states = np.arange(0, 26)
-prbs_req_s1_states = np.arange(-2, 3)
-prbs_req_s2_states = np.arange(-2, 3)
-q_values = np.zeros([650, 25])
+prbs_inf_states = np.arange(0, max_prbs_inf+1)
+prbs_req_s1_states = np.arange(min_req_prbs, max_req_prbs+1)
+prbs_req_s2_states = np.arange(min_req_prbs, max_req_prbs+1)
+q_values = np.zeros([np.size(prbs_inf_states)*np.size(prbs_req_s1_states)*np.size(prbs_req_s2_states),
+                     np.size(prbs_req_s1_states)*np.size(prbs_req_s2_states)])
 row_indices = pd.MultiIndex.from_product([prbs_inf_states, prbs_req_s1_states, prbs_req_s2_states])
-action1_space = np.arange(-2, 3)
-action2_space = np.arange(-2, 3)
+action1_space = np.arange(min_req_prbs, max_req_prbs+1)
+action2_space = np.arange(min_req_prbs, max_req_prbs+1)
 col_indices = pd.MultiIndex.from_product([action1_space, action2_space])
 q_table = pd.DataFrame(q_values, columns=col_indices, index=row_indices)
 
@@ -99,20 +102,14 @@ q_table.to_csv('q_table.csv')
 # initializing the environment
 env.time = 0
 env.state = np.array([15, env.sine_amplitude[env.time], env.sine_amplitude[env.time]])
-action_s1_record = np.zeros(20)
-action_s2_record = np.zeros(20)
 print("Avail pRBs \t Req pRBs \t Alloc pRBs S1 \t Alloc pRBs S2")
 for i in range(0, 20): # upper bound is exclusive
     # select action (exploit)
     action = q_table.loc[state].idxmax()  # Exploit learned values
-    action_s1_record[i-1] = action[0]
-    action_s2_record[i-1] = action[1]
     print("{} \t \t {} \t \t {}   \t \t \t {}".format(env.state[0], env.sine_amplitude[env.time], action[0], action[1]))
     # move 1 step forward
     next_state, reward, done, truncated, info = env.step(action)
     # update state
     state = next_state
 
-# print(env.sine_amplitude)
-# print(action_s1_record)
-# print(action_s2_record)
+
