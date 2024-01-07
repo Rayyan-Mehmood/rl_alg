@@ -34,8 +34,16 @@ class RicEnv(Env):
         self.state = np.array([prbs_inf, self.sine_amplitude[self.time], self.sine_amplitude[self.time]])
 
         # calculate reward
-        # if slice gets the num prbs it requires, then reward
-        if action[0] == prev_state[1] and action[1] == prev_state[2]:
+        # if not enough pRBs available
+        if prev_state[0] - prev_state[1] - prev_state[2] < 0:
+            ideal_action_0 = round((prev_state[1]/(prev_state[1]+prev_state[2])) * prev_state[0] + 0.000001)
+            ideal_action_1 = round((prev_state[2] / (prev_state[1] + prev_state[2])) * prev_state[0] - 0.000001)
+            if action[0] == ideal_action_0 and action[1] == ideal_action_1:
+                reward = 1
+            else:
+                reward = -1
+        # if enough pRBs available and slice gets the num prbs it requires, then reward
+        elif action[0] == prev_state[1] and action[1] == prev_state[2]:
             reward = 1
         else:
             reward = -1
