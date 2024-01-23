@@ -70,11 +70,12 @@ class RicEnv(Env):
         # if enough pRBs available and both slices are allocated less prbs than required
         # Case 5, 6, 8
         elif new_curr_prbs_s1 <= req_prbs_s1 and new_curr_prbs_s2 <= req_prbs_s2:
-            reward = 5 * (- (req_prbs_s1/(new_curr_prbs_s1+0.00001)) - (req_prbs_s2/(new_curr_prbs_s2+0.00001)))
+            reward = 5 * (- (req_prbs_s1/(new_curr_prbs_s1+1.0001)) - (req_prbs_s2/(new_curr_prbs_s2+1.0001)))
         # if enough pRBs available and one slice is allocated more and one slice is allocated less
         # Case 7
         else:
             reward = 50 - (5 * (abs(new_curr_prbs_s1-req_prbs_s1)+abs(new_curr_prbs_s2-req_prbs_s2)))
+
 
         if new_prbs_inf < 0:
             reward = -100
@@ -129,7 +130,7 @@ gamma = 0.0001
 epsilon = 0.9999
 
 # Training
-for i in range(1, 400000):
+for i in range(1, 100000):
     print(i)
     # select action (explore vs exploit)
     if random.uniform(0, 1) < epsilon:
@@ -154,14 +155,14 @@ q_table.to_csv('q_table.csv')
 # initializing the environment
 env.time = 0
 env.state = np.array([1, env.sine_amplitude[env.time], env.sine_amplitude[env.time], min_curr_prbs, min_curr_prbs])
-print("Inf pRBs \t Req pRBs \t Alloc pRBs S1 \t Alloc pRBs S2 \t pRBs S1 \t pRBs s2")
+print("pRBs_inf \t pRBs_req \t pRBs_s1 \t pRBs_s2 \t A1 \t A2")
 for i in range(0, 20): # upper bound is exclusive
     # select action (exploit)
     action = q_table.loc[state].idxmax()  # Exploit learned values
-    print("{} \t \t {} \t \t {}   \t \t \t {}   \t \t \t {} \t \t {}".format(env.state[0],
-                                                                             env.sine_amplitude[env.time],
-                                                                             action[0], action[1], env.state[3],
-                                                                             env.state[4]))
+    print("{} \t \t {} \t \t {} \t \t {} \t \t {}  \t {}".format(env.state[0],
+                                                                             env.sine_amplitude[env.time], env.state[3],
+                                                                             env.state[4],
+                                                                             action[0], action[1]))
     # move 1 step forward
     next_state, reward, done, truncated, info = env.step(action)
 
