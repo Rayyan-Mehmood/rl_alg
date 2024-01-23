@@ -28,7 +28,7 @@ class RicEnv(Env):
         # req_prbs should oscillate around max_prbs_req/2
         self.sine_amplitude = np.rint((max_req_prbs/2) * np.sin(sine_time_range) + max_req_prbs/2)
         self.time = 0
-        self.state = np.array([10, self.sine_amplitude[self.time], self.sine_amplitude[self.time], min_curr_prbs, min_curr_prbs])
+        self.state = np.array([1, self.sine_amplitude[self.time], self.sine_amplitude[self.time], min_curr_prbs, min_curr_prbs])
         # remember: it's required prbs, not the amount that's there
 
     def step(self, action):
@@ -56,41 +56,45 @@ class RicEnv(Env):
             ideal_action_0 = round((difference_s1/(difference_s1+difference_s2+0.00001)) * prbs_inf + 0.000001)
             ideal_action_1 = round((difference_s2/(difference_s1+difference_s2+0.00001)) * prbs_inf - 0.000001)
             if action[0] == ideal_action_0 and action[1] == ideal_action_1:
-                reward = 1
+                reward = 100
             else:
-                reward = -1
+                reward = - abs(action[0] - ideal_action_0) - abs(action[1] - ideal_action_1)
         # if enough pRBs available and slice gets the num prbs it requires, then reward
+        # Case 1
         elif new_curr_prbs_s1 == req_prbs_s1 and new_curr_prbs_s2 == req_prbs_s2:
             reward = 100
         # if enough pRBs available and slice is allocated more prbs than required
-        elif new_curr_prbs_s1 > req_prbs_s1 and new_curr_prbs_s2 > req_prbs_s2:
-            reward = 100 - 10 * ((new_curr_prbs_s1-req_prbs_s1)+(new_curr_prbs_s2-req_prbs_s2))
-        # if enough pRBs available and slice 1 is allocated less prbs than required
-        elif new_curr_prbs_s1 < req_prbs_s1:
-            reward = - (req_prbs_s1/(new_curr_prbs_s1+0.00001))
-        # if enough pRBs available and slice 2 is allocated less prbs than required
+        # Case 2, 3, 4
+        elif new_curr_prbs_s1 >= req_prbs_s1 and new_curr_prbs_s2 >= req_prbs_s2:
+            reward = 100 - 5 * ((new_curr_prbs_s1-req_prbs_s1)+(new_curr_prbs_s2-req_prbs_s2))
+        # if enough pRBs available and both slices are allocated less prbs than required
+        # Case 5, 6, 8
+        elif new_curr_prbs_s1 <= req_prbs_s1 and new_curr_prbs_s2 <= req_prbs_s2:
+            reward = 5 * (- (req_prbs_s1/(new_curr_prbs_s1+0.00001)) - (req_prbs_s2/(new_curr_prbs_s2+0.00001)))
+        # if enough pRBs available and one slice is allocated more and one slice is allocated less
+        # Case 7
         else:
-            reward = - (req_prbs_s2/(new_curr_prbs_s2+0.00001))
+            reward = 50 - (5 * (abs(new_curr_prbs_s1-req_prbs_s1)+abs(new_curr_prbs_s2-req_prbs_s2)))
 
         if new_prbs_inf < 0:
-            reward = -10
+            reward = -100
             self.state[0] = 0
         elif new_prbs_inf > max_prbs_inf:
-            reward = -10
+            reward = -100
             self.state[0] = max_prbs_inf
 
         if new_curr_prbs_s1 < 0:
-            reward = -10
+            reward = -100
             self.state[3] = 0
         elif new_curr_prbs_s1 > max_curr_prbs:
-            reward = -10
+            reward = -100
             self.state[3] = max_curr_prbs
 
         if new_curr_prbs_s2 < 0:
-            reward = -10
+            reward = -100
             self.state[4] = 0
         elif new_curr_prbs_s2 > max_curr_prbs:
-            reward = -10
+            reward = -100
             self.state[4] = max_curr_prbs
 
 
@@ -121,11 +125,11 @@ q_table = pd.DataFrame(q_values, columns=col_indices, index=row_indices)
 
 # Hyperparameters
 alpha = 0.7
-gamma = 0.001
+gamma = 0.0001
 epsilon = 0.9999
 
 # Training
-for i in range(1, 200000):
+for i in range(1, 400000):
     print(i)
     # select action (explore vs exploit)
     if random.uniform(0, 1) < epsilon:
@@ -138,7 +142,7 @@ for i in range(1, 200000):
     # update q-value
     old_value = q_table.loc[state, action]
     next_max = q_table.loc[next_state].max()
-    new_value = (1 - alpha) * old_value + alpha * (reward + gamma * next_max)
+    new_value = (1 - alpha) * old_value + alpha * (reward + (gamma * next_max))
     # new_value = reward # not using bellman equation
     q_table.loc[state, action] = new_value
     # update state
@@ -149,14 +153,18 @@ q_table.to_csv('q_table.csv')
 # Testing
 # initializing the environment
 env.time = 0
-env.state = np.array([10, env.sine_amplitude[env.time], env.sine_amplitude[env.time], min_curr_prbs, min_curr_prbs])
+env.state = np.array([1, env.sine_amplitude[env.time], env.sine_amplitude[env.time], min_curr_prbs, min_curr_prbs])
 print("Inf pRBs \t Req pRBs \t Alloc pRBs S1 \t Alloc pRBs S2 \t pRBs S1 \t pRBs s2")
 for i in range(0, 20): # upper bound is exclusive
     # select action (exploit)
     action = q_table.loc[state].idxmax()  # Exploit learned values
-    print("{} \t \t {} \t \t {}   \t \t \t {}   \t \t \t {} \t \t {}".format(env.state[0], env.sine_amplitude[env.time], action[0], action[1], env.state[3], env.state[4]))
+    print("{} \t \t {} \t \t {}   \t \t \t {}   \t \t \t {} \t \t {}".format(env.state[0],
+                                                                             env.sine_amplitude[env.time],
+                                                                             action[0], action[1], env.state[3],
+                                                                             env.state[4]))
     # move 1 step forward
     next_state, reward, done, truncated, info = env.step(action)
+
     # update state
     state = next_state
 
