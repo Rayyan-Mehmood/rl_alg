@@ -29,7 +29,7 @@ class RicEnv(Env):
         # req_prbs should oscillate around max_prbs_req/2
         self.sine_amplitude = np.rint((max_req_prbs/2) * np.sin(sine_time_range) + max_req_prbs/2)
         self.time = 0
-        self.state = np.array([8, self.sine_amplitude[self.time], self.sine_amplitude[self.time], min_curr_prbs, min_curr_prbs])
+        self.state = np.array([1, self.sine_amplitude[self.time], self.sine_amplitude[self.time], min_curr_prbs, min_curr_prbs])
         # remember: it's required prbs, not the amount that's there
 
     def calc_individual_reward(self, r, a):
@@ -44,7 +44,7 @@ class RicEnv(Env):
 
     def step(self, action):
         # save the current state
-        prev_state = tuple(self.state)
+        prev_state = list(self.state)
         prbs_inf = prev_state[0]
         req_prbs_s1 = prev_state[1]
         req_prbs_s2 = prev_state[2]
@@ -57,27 +57,27 @@ class RicEnv(Env):
         self.time = self.time + 1  # update time
         if self.time > 19:
             self.time = 0 # reset time
+            new_prbs_inf = 0
+            new_curr_prbs_s1 = 0
+            new_curr_prbs_s2 = 0
         self.state = np.array([new_prbs_inf, self.sine_amplitude[self.time], self.sine_amplitude[self.time], new_curr_prbs_s1, new_curr_prbs_s2])
 
         # calculate reward
         # if not enough pRBs available
-        if prbs_inf - req_prbs_s1 - req_prbs_s2 < 0:
+        if prbs_inf - (req_prbs_s1 - curr_prbs_s1) - (req_prbs_s2 - curr_prbs_s2) < 0:
             difference_s1 = req_prbs_s1 - curr_prbs_s1
             difference_s2 = req_prbs_s2 - curr_prbs_s2
-            ideal_action_0 = round((difference_s1/(difference_s1+difference_s2+0.00001)) * prbs_inf + 0.000001)
-            ideal_action_1 = round((difference_s2/(difference_s1+difference_s2+0.00001)) * prbs_inf - 0.000001)
-            if action[0] == ideal_action_0 and action[1] == ideal_action_1:
-                reward = 100
-            else:
-                reward = - abs(action[0] - ideal_action_0) - abs(action[1] - ideal_action_1)
-        else:
-            total_reward = 0
-            individual_reward = 0
-            for slice in range(1, num_slices+1):
-                individual_reward = self.calc_individual_reward(prev_state[slice], self.state[slice+2])
-                total_reward = total_reward + individual_reward
-            reward = total_reward
+            ideal_action_0 = round((difference_s1/(difference_s1+difference_s2-0.00001)) * prbs_inf)
+            ideal_action_1 = round((difference_s2/(difference_s1+difference_s2+0.00001)) * prbs_inf)
+            prev_state[1] = round(prev_state[3] + ideal_action_0)
+            prev_state[2] = round(prev_state[4] + ideal_action_1)
 
+        total_reward = 0
+        individual_reward = 0
+        for slice in range(1, num_slices+1):
+            individual_reward = self.calc_individual_reward(prev_state[slice], self.state[slice+2])
+            total_reward = total_reward + individual_reward
+        reward = total_reward
 
         if new_prbs_inf < 0:
             reward = -1000
@@ -156,7 +156,8 @@ q_table.to_csv('q_table.csv')
 # Testing
 # initializing the environment
 env.time = 0
-env.state = np.array([8, env.sine_amplitude[env.time], env.sine_amplitude[env.time], min_curr_prbs, min_curr_prbs])
+env.state = np.array([1, env.sine_amplitude[env.time], env.sine_amplitude[env.time], min_curr_prbs, min_curr_prbs])
+state = tuple(env.state)
 print("pRBs_inf \t pRBs_req \t pRBs_s1 \t pRBs_s2 \t A1 \t A2")
 for i in range(0, 20): # upper bound is exclusive
     # select action (exploit)
