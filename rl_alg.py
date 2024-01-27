@@ -29,7 +29,7 @@ class RicEnv(Env):
         # req_prbs should oscillate around max_prbs_req/2
         self.sine_amplitude = np.rint((max_req_prbs/2) * np.sin(sine_time_range) + max_req_prbs/2)
         self.time = 0
-        self.state = np.array([1, self.sine_amplitude[self.time], self.sine_amplitude[self.time], min_curr_prbs, min_curr_prbs])
+        self.state = np.array([8, self.sine_amplitude[self.time], self.sine_amplitude[self.time], min_curr_prbs, min_curr_prbs])
         # remember: it's required prbs, not the amount that's there
 
     def calc_individual_reward(self, r, a):
@@ -57,9 +57,6 @@ class RicEnv(Env):
         self.time = self.time + 1  # update time
         if self.time > 19:
             self.time = 0 # reset time
-            new_prbs_inf = 0
-            new_curr_prbs_s1 = 0
-            new_curr_prbs_s2 = 0
         self.state = np.array([new_prbs_inf, self.sine_amplitude[self.time], self.sine_amplitude[self.time], new_curr_prbs_s1, new_curr_prbs_s2])
 
         # calculate reward
@@ -132,7 +129,7 @@ gamma = 0.00001
 epsilon = 0.9999
 
 # Training
-for i in range(1, 200000):
+for i in range(1, 400000):
     print(i)
     # select action (explore vs exploit)
     if random.uniform(0, 1) < epsilon:
@@ -156,7 +153,7 @@ q_table.to_csv('q_table.csv')
 # Testing
 # initializing the environment
 env.time = 0
-env.state = np.array([1, env.sine_amplitude[env.time], env.sine_amplitude[env.time], min_curr_prbs, min_curr_prbs])
+env.state = np.array([8, env.sine_amplitude[env.time], env.sine_amplitude[env.time], min_curr_prbs, min_curr_prbs])
 state = tuple(env.state)
 print("pRBs_inf \t pRBs_req \t pRBs_s1 \t pRBs_s2 \t A1 \t A2")
 for i in range(0, 20): # upper bound is exclusive
