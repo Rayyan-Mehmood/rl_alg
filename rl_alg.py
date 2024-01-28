@@ -128,7 +128,7 @@ gamma = 0.00001
 epsilon = 0.9999
 
 # Training
-for i in range(1, 1000):
+for i in range(1, 200000):
     print(i)
     # select action (explore vs exploit)
     if random.uniform(0, 1) < epsilon:
@@ -155,7 +155,11 @@ env.time = 0
 env.state = np.array([prbs_inf_init, env.prbs_req_data[env.time], env.prbs_req_data[env.time], min_curr_prbs, min_curr_prbs])
 state = tuple(env.state)
 print("pRBs_inf \t pRBs_req \t pRBs_s1 \t pRBs_s2 \t A1 \t A2")
+prbs_s1_record = np.zeros(20)
+prbs_s2_record = np.zeros(20)
 for i in range(0, 20): # upper bound is exclusive
+    prbs_s1_record[env.time] = env.state[3]
+    prbs_s2_record[env.time] = env.state[4]
     # select action (exploit)
     action = q_table.loc[state].idxmax()  # Exploit learned values
     print("{} \t \t {} \t \t {} \t \t {} \t \t {}  \t {}".format(env.state[0],
@@ -168,4 +172,12 @@ for i in range(0, 20): # upper bound is exclusive
     # update state
     state = next_state
 
-
+plot.plot(np.arange(0, 20), env.prbs_req_data)
+plot.title('pRBs Required')
+plot.show()
+plot.plot(np.arange(0, 20), prbs_s1_record)
+plot.title('pRBs Slice 1')
+plot.show()
+plot.plot(np.arange(0, 20), prbs_s2_record)
+plot.title('pRBs Slice 2')
+plot.show()
