@@ -4,8 +4,10 @@ import random
 from gymnasium import Env, spaces
 from gymnasium.spaces import Discrete, Box, MultiDiscrete
 import pandas as pd
+import csv
 import matplotlib.pyplot as plot
 
+prbs_inf_init = 8
 num_slices = 2
 max_prbs_inf = 14
 max_req_prbs = 2 # max total prbs a slice can require
@@ -24,12 +26,9 @@ class RicEnv(Env):
         # (here, we're talking about total prbs)
         self.observation_space = Box(low=np.array([0, min_req_prbs, min_req_prbs, min_curr_prbs, min_curr_prbs]), high=np.array([max_prbs_inf, max_req_prbs, max_req_prbs, max_curr_prbs, max_curr_prbs]), dtype=int)
 
-        # Creating function of req_prbs
-        sine_time_range = np.arange(0, 10, 0.5)
-        # req_prbs should oscillate around max_prbs_req/2
-        self.sine_amplitude = np.rint((max_req_prbs/2) * np.sin(sine_time_range) + max_req_prbs/2)
+        self.prbs_req_data = np.genfromtxt('data_sin.csv', delimiter=',')
         self.time = 0
-        self.state = np.array([8, self.sine_amplitude[self.time], self.sine_amplitude[self.time], min_curr_prbs, min_curr_prbs])
+        self.state = np.array([prbs_inf_init, self.prbs_req_data[self.time], self.prbs_req_data[self.time], min_curr_prbs, min_curr_prbs])
         # remember: it's required prbs, not the amount that's there
 
     def calc_individual_reward(self, r, a):
@@ -56,8 +55,9 @@ class RicEnv(Env):
         new_curr_prbs_s2 = curr_prbs_s2 + action[1]
         self.time = self.time + 1  # update time
         if self.time > 19:
-            self.time = 0 # reset time
-        self.state = np.array([new_prbs_inf, self.sine_amplitude[self.time], self.sine_amplitude[self.time], new_curr_prbs_s1, new_curr_prbs_s2])
+            self.time = 0  # reset time
+
+        self.state = np.array([new_prbs_inf, self.prbs_req_data[self.time], self.prbs_req_data[self.time], new_curr_prbs_s1, new_curr_prbs_s2])
 
         # calculate reward
         # if not enough pRBs available
@@ -129,7 +129,7 @@ gamma = 0.00001
 epsilon = 0.9999
 
 # Training
-for i in range(1, 400000):
+for i in range(1, 1000):
     print(i)
     # select action (explore vs exploit)
     if random.uniform(0, 1) < epsilon:
@@ -153,14 +153,14 @@ q_table.to_csv('q_table.csv')
 # Testing
 # initializing the environment
 env.time = 0
-env.state = np.array([8, env.sine_amplitude[env.time], env.sine_amplitude[env.time], min_curr_prbs, min_curr_prbs])
+env.state = np.array([prbs_inf_init, env.prbs_req_data[env.time], env.prbs_req_data[env.time], min_curr_prbs, min_curr_prbs])
 state = tuple(env.state)
 print("pRBs_inf \t pRBs_req \t pRBs_s1 \t pRBs_s2 \t A1 \t A2")
 for i in range(0, 20): # upper bound is exclusive
     # select action (exploit)
     action = q_table.loc[state].idxmax()  # Exploit learned values
     print("{} \t \t {} \t \t {} \t \t {} \t \t {}  \t {}".format(env.state[0],
-                                                                             env.sine_amplitude[env.time], env.state[3],
+                                                                             env.prbs_req_data[env.time], env.state[3],
                                                                              env.state[4],
                                                                              action[0], action[1]))
     # move 1 step forward
