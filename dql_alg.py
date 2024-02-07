@@ -1,7 +1,5 @@
 import numpy as np
-import gymnasium as gym
 import random
-from gymnasium import Env, spaces
 from gymnasium.spaces import Discrete, Box, MultiDiscrete
 import pandas as pd
 import matplotlib.pyplot as plot
@@ -19,14 +17,15 @@ min_curr_prbs = 0
 max_allocate = max_req_prbs
 min_allocate = -max_req_prbs
 
-class RicEnv(Env):
+class RicEnv():
     def __init__(self):
         # Here, the bounds are inclusive
         # action = [allocate_prbs_s1, allocate_prbs_s2]
-        self.action_space = Box(low=np.array([min_allocate, min_allocate]), high=np.array([max_allocate, max_allocate]), dtype=int)
+        action1_space = np.arange(min_allocate, max_allocate + 1)
+        action2_space = np.arange(min_allocate, max_allocate + 1)
+        action_space_MI = pd.MultiIndex.from_product([action1_space, action2_space])
+        self.action_space = pd.DataFrame(index=action_space_MI, columns=['Value'])
         # state = [prbs_inf, req_prbs_s1, req_prbs_s2, curr_prbs_s1, curr_prbs_s2]
-        # (here, we're talking about total prbs)
-        self.observation_space = Box(low=np.array([0, min_req_prbs, min_req_prbs, min_curr_prbs, min_curr_prbs]), high=np.array([max_prbs_inf, max_req_prbs, max_req_prbs, max_curr_prbs, max_curr_prbs]), dtype=int)
 
         self.prbs_req_data = np.genfromtxt('data_sin.csv', delimiter=',')
         self.time = 0
@@ -164,12 +163,13 @@ action_space_MI = pd.MultiIndex.from_product([action1_space, action2_space])
 
 # 1. Initialize the Target and Main models
 # Main model
-main_model = env.agent(env.observation_space.shape, 25)
+# 5 is the number of state params
+main_model = env.agent((5, ), 25)
 # print(env.observation_space.shape)
 # print(main_model.predict(env.state.reshape([1, env.state.shape[0]])))
 # print(env.state.reshape([1, env.state.shape[0]]))
 # Target Model (updated every 100 steps)
-target_model = env.agent(env.observation_space.shape, 25)
+target_model = env.agent((5, ), 25)
 target_model.set_weights(main_model.get_weights())
 
 replay_memory = deque(maxlen=50_000)
@@ -180,11 +180,11 @@ gamma = 0.00001
 epsilon = 0.9999
 
 # Training
-for i in range(1, 20000):
+for i in range(1, 20):
     print(i)
     # select action (explore vs exploit)
     if random.uniform(0, 1) < epsilon:
-        action = tuple(env.action_space.sample())  # Explore action space
+        action = env.action_space.sample().index[0] # Explore action space
         action_index = action_space_MI.get_loc(action)
     else:
         predictions = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten() # Exploit learned values
@@ -216,7 +216,7 @@ for i in range(0, 20): # upper bound is exclusive
     # prbs_s2_record[env.time] = env.state[4]
     # select action (exploit)
     predicted = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()  # Exploit learned values
-    print(predicted)
+    # print(predicted)
     action = action_space_MI[np.argmax(predicted)]
     print("{} \t \t {} \t \t {} \t \t {} \t \t {}  \t {}".format(env.state[0],
                                                                              env.prbs_req_data[env.time], env.state[3],
