@@ -1,6 +1,5 @@
 import numpy as np
 import random
-from gymnasium.spaces import Discrete, Box, MultiDiscrete
 import pandas as pd
 import matplotlib.pyplot as plot
 import tensorflow as tf
@@ -17,14 +16,14 @@ min_curr_prbs = 0
 max_allocate = max_req_prbs
 min_allocate = -max_req_prbs
 
-class RicEnv():
+
+class RicEnv:
     def __init__(self):
-        # Here, the bounds are inclusive
-        # action = [allocate_prbs_s1, allocate_prbs_s2]
+        # Encoding the action space as a Multi-Index array of tuples
         action1_space = np.arange(min_allocate, max_allocate + 1)
         action2_space = np.arange(min_allocate, max_allocate + 1)
-        action_space_MI = pd.MultiIndex.from_product([action1_space, action2_space])
-        self.action_space = pd.DataFrame(index=action_space_MI, columns=['Value'])
+        self.action_space_MI = pd.MultiIndex.from_product([action1_space, action2_space])
+        self.action_space = pd.DataFrame(index=self.action_space_MI, columns=['Value'])
         # state = [prbs_inf, req_prbs_s1, req_prbs_s2, curr_prbs_s1, curr_prbs_s2]
 
         self.prbs_req_data = np.genfromtxt('data_sin.csv', delimiter=',')
@@ -103,7 +102,9 @@ class RicEnv():
         truncated = False
         return tuple(self.state), reward, done, truncated, info
 
-    def agent(self, state_shape, action_shape):
+
+class RicAgent:
+    def build_net(self, state_shape, action_shape):
         """ The agent maps X-states to Y-actions
         e.g. The neural network output is [.1, .7, .1, .3]
         The highest value 0.7 is the Q-Value.
@@ -113,9 +114,11 @@ class RicEnv():
         init = keras.initializers.HeUniform()
         model = keras.Sequential()
         model.add(keras.layers.Dense(24, input_shape=state_shape, activation='relu', kernel_initializer=init))
+        # model.add(keras.layers.BatchNormalization())
         model.add(keras.layers.Dense(12, activation='relu', kernel_initializer=init))
+        # model.add(keras.layers.BatchNormalization())
         model.add(keras.layers.Dense(action_shape, activation='linear', kernel_initializer=init))
-        model.compile(loss=keras.losses.Huber(), optimizer=keras.optimizers.Adam(lr=learning_rate),
+        model.compile(loss=keras.losses.Huber(), optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
                       metrics=['accuracy'])
         # model.summary()
         return model
@@ -124,7 +127,7 @@ class RicEnv():
         learning_rate = 0.999
         discount_factor = 0.00001
 
-        MIN_REPLAY_SIZE = 1000
+        MIN_REPLAY_SIZE = 500
         if len(replay_memory) < MIN_REPLAY_SIZE:
             return
 
@@ -139,92 +142,83 @@ class RicEnv():
         Y = []
         for index, (observation, action, reward, new_observation, done) in enumerate(mini_batch):
             if not done:
-                max_future_q = reward + discount_factor * np.max(future_qs_list[index])
+                # very greedy - new q value is basically just the reward
+                max_future_q = reward + (discount_factor * np.max(future_qs_list[index]))
             else:
                 max_future_q = reward
 
             current_qs = current_qs_list[index]
-            current_qs[action] = (1 - learning_rate) * current_qs[action] + learning_rate * max_future_q
+            current_qs[action] = ((1 - learning_rate) * current_qs[action]) + (learning_rate * max_future_q)
 
             X.append(observation)
             Y.append(current_qs)
         model.fit(np.array(X), np.array(Y), batch_size=batch_size, verbose=0, shuffle=True)
 
 
+def main():
 
-# create environment
-env = RicEnv()
-state = tuple(env.state)
+    env = RicEnv()
+    state = tuple(env.state)
+    agent = RicAgent()
 
-# Encoding the action space as a Multi-Index array of tuples
-action1_space = np.arange(min_allocate, max_allocate+1)
-action2_space = np.arange(min_allocate, max_allocate+1)
-action_space_MI = pd.MultiIndex.from_product([action1_space, action2_space])
+    main_model = agent.build_net(env.state.shape, len(env.action_space))
+    target_model = agent.build_net(env.state.shape, len(env.action_space))
+    target_model.set_weights(main_model.get_weights())
+    replay_memory = deque(maxlen=50_000)
 
-# 1. Initialize the Target and Main models
-# Main model
-# 5 is the number of state params
-main_model = env.agent((5, ), 25)
-# print(env.observation_space.shape)
-# print(main_model.predict(env.state.reshape([1, env.state.shape[0]])))
-# print(env.state.reshape([1, env.state.shape[0]]))
-# Target Model (updated every 100 steps)
-target_model = env.agent((5, ), 25)
-target_model.set_weights(main_model.get_weights())
+    # Hyper-parameters
+    epsilon = 1-0.9999
 
-replay_memory = deque(maxlen=50_000)
+    # Training
+    for i in range(1, 3):
+        print(i)
+        # select action (explore vs exploit)
+        if random.uniform(0, 1) < epsilon:
+            action = env.action_space.sample().index[0] # Explore action space
+            action_index = env.action_space_MI.get_loc(action)
+        else:
+            predictions = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten() # Exploit learned values
+            action = env.action_space_MI[np.argmax(predictions)]
+            action_index = env.action_space_MI.get_loc(action)
 
-# Hyperparameters
-alpha = 0.99999
-gamma = 0.00001
-epsilon = 0.9999
+        # move 1 step forward
+        next_state, reward, done, truncated, info = env.step(action)
+        replay_memory.append([state, action_index, reward, next_state, done])
+        # Train main network
+        # if i % 4 == 0:
+        agent.train(replay_memory, main_model, target_model, done)
+        # update state
+        state = next_state
 
-# Training
-for i in range(1, 20):
-    print(i)
-    # select action (explore vs exploit)
-    if random.uniform(0, 1) < epsilon:
-        action = env.action_space.sample().index[0] # Explore action space
-        action_index = action_space_MI.get_loc(action)
-    else:
-        predictions = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten() # Exploit learned values
-        action = action_space_MI[np.argmax(predictions)]
-        action_index = action_space_MI.get_loc(action)
+        if i % 50 == 0:
+            target_model.set_weights(main_model.get_weights())
 
-    # move 1 step forward
-    next_state, reward, done, truncated, info = env.step(action)
-    replay_memory.append([state, action_index, reward, next_state, done])
-    # Train main network
-    if i % 4 == 0:
-        env.train(replay_memory, main_model, target_model, done)
-    # update state
-    state = next_state
+    # Testing
+    # initializing the environment
+    env.time = 0
+    env.state = np.array([prbs_inf_init, env.prbs_req_data[env.time], env.prbs_req_data[env.time], min_curr_prbs, min_curr_prbs])
+    state = tuple(env.state)
+    print("pRBs_inf \t pRBs_req \t pRBs_s1 \t pRBs_s2 \t A1 \t A2")
+    # prbs_s1_record = np.zeros(20)
+    # prbs_s2_record = np.zeros(20)
+    for i in range(0, 3): # upper bound is exclusive
+        # prbs_s1_record[env.time] = env.state[3]
+        # prbs_s2_record[env.time] = env.state[4]
+        # select action (exploit)
+        predicted = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()  # Exploit learned values
+        print(np.reshape(np.round(predicted, 3), (5, 5)))
+        action = env.action_space_MI[np.argmax(predicted)]
+        print("{} \t \t {} \t \t {} \t \t {} \t \t {}  \t {}".format(env.state[0],
+                                                                                 env.prbs_req_data[env.time], env.state[3],
+                                                                                 env.state[4],
+                                                                                 action[0], action[1]))
+        # move 1 step forward
+        next_state, reward, done, truncated, info = env.step(action)
 
-    if i % 50 == 0:
-        target_model.set_weights(main_model.get_weights())
+        # update state
+        state = next_state
 
-# Testing
-# initializing the environment
-env.time = 0
-env.state = np.array([prbs_inf_init, env.prbs_req_data[env.time], env.prbs_req_data[env.time], min_curr_prbs, min_curr_prbs])
-state = tuple(env.state)
-print("pRBs_inf \t pRBs_req \t pRBs_s1 \t pRBs_s2 \t A1 \t A2")
-# prbs_s1_record = np.zeros(20)
-# prbs_s2_record = np.zeros(20)
-for i in range(0, 20): # upper bound is exclusive
-    # prbs_s1_record[env.time] = env.state[3]
-    # prbs_s2_record[env.time] = env.state[4]
-    # select action (exploit)
-    predicted = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()  # Exploit learned values
-    # print(predicted)
-    action = action_space_MI[np.argmax(predicted)]
-    print("{} \t \t {} \t \t {} \t \t {} \t \t {}  \t {}".format(env.state[0],
-                                                                             env.prbs_req_data[env.time], env.state[3],
-                                                                             env.state[4],
-                                                                             action[0], action[1]))
-    # move 1 step forward
-    next_state, reward, done, truncated, info = env.step(action)
 
-    # update state
-    state = next_state
+if __name__ == "__main__":
+    main()
 
