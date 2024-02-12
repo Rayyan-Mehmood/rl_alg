@@ -6,9 +6,9 @@ import tensorflow as tf
 import keras
 from collections import deque
 
-prbs_inf_init = 8
+prbs_inf_init = 4
 num_slices = 2
-max_prbs_inf = 14
+max_prbs_inf = 8
 max_req_prbs = 2 # max total prbs a slice can require
 min_req_prbs = 0
 max_curr_prbs = max_req_prbs
@@ -33,11 +33,11 @@ class RicEnv:
 
     def calc_individual_reward(self, r, a):
         if a == r:
-            individual_reward = 120
+            individual_reward = 150
         elif a > r:
             individual_reward = 100 - (10 * (a - r))
         else:
-            individual_reward = -100 + (10 * (r - a))
+            individual_reward = 50 - (10 * (r - a))
 
         return individual_reward
 
@@ -75,25 +75,26 @@ class RicEnv:
             total_reward = total_reward + individual_reward
         reward = total_reward
 
+        # Impossible actions are punished heavily
         if new_prbs_inf < 0:
-            reward = -1000
+            reward = -150
             self.state[0] = 0
         elif new_prbs_inf > max_prbs_inf:
-            reward = -1000
+            reward = -150
             self.state[0] = max_prbs_inf
 
         if new_curr_prbs_s1 < 0:
-            reward = -1000
+            reward = -150
             self.state[3] = 0
         elif new_curr_prbs_s1 > max_curr_prbs:
-            reward = -1000
+            reward = -150
             self.state[3] = max_curr_prbs
 
         if new_curr_prbs_s2 < 0:
-            reward = -1000
+            reward = -150
             self.state[4] = 0
         elif new_curr_prbs_s2 > max_curr_prbs:
-            reward = -1000
+            reward = -150
             self.state[4] = max_curr_prbs
 
 
@@ -104,55 +105,44 @@ class RicEnv:
 
 
 class RicAgent:
-    def build_net(self, state_shape, action_shape):
+    def build_net(self, state_shape, num_actions):
         """ The agent maps X-states to Y-actions
         e.g. The neural network output is [.1, .7, .1, .3]
         The highest value 0.7 is the Q-Value.
         The index of the highest action (0.7) is action #1.
         """
-        learning_rate = 0.001
-        init = keras.initializers.HeUniform()
+        learning_rate = 0.01
         model = keras.Sequential()
-        model.add(keras.layers.Dense(24, input_shape=state_shape, activation='relu', kernel_initializer=init))
-        # model.add(keras.layers.BatchNormalization())
-        model.add(keras.layers.Dense(12, activation='relu', kernel_initializer=init))
-        # model.add(keras.layers.BatchNormalization())
-        model.add(keras.layers.Dense(action_shape, activation='linear', kernel_initializer=init))
-        model.compile(loss=keras.losses.Huber(), optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
-                      metrics=['accuracy'])
+        model.add(keras.layers.Input(shape=state_shape))
+        model.add(keras.layers.Dense(32, activation='relu'))
+        model.add(keras.layers.Dense(32, activation='relu'))
+        model.add(keras.layers.Dense(num_actions, activation='linear'))
+        model.compile(optimizer='adam', loss='mse')
         # model.summary()
         return model
 
-    def train(self, replay_memory, model, target_model, done):
-        learning_rate = 0.999
-        discount_factor = 0.00001
-
+    def train(self, replay_memory, model, done):
         MIN_REPLAY_SIZE = 500
         if len(replay_memory) < MIN_REPLAY_SIZE:
             return
 
-        batch_size = 64 * 2
+        batch_size = 32
         mini_batch = random.sample(replay_memory, batch_size)
-        current_states = np.array([transition[0] for transition in mini_batch])
-        current_qs_list = model.predict(current_states)
-        new_current_states = np.array([transition[3] for transition in mini_batch])
-        future_qs_list = target_model.predict(new_current_states)
 
-        X = []
+        # Collect observations from the mini-batch
+        X = np.array([transition[0] for transition in mini_batch])
+
+        # Predict Q-values for the entire batch
+        current_qs_list = model.predict(X)
+
         Y = []
         for index, (observation, action, reward, new_observation, done) in enumerate(mini_batch):
-            if not done:
-                # very greedy - new q value is basically just the reward
-                max_future_q = reward + (discount_factor * np.max(future_qs_list[index]))
-            else:
-                max_future_q = reward
-
             current_qs = current_qs_list[index]
-            current_qs[action] = ((1 - learning_rate) * current_qs[action]) + (learning_rate * max_future_q)
+            current_qs[action] = reward
 
-            X.append(observation)
             Y.append(current_qs)
-        model.fit(np.array(X), np.array(Y), batch_size=batch_size, verbose=0, shuffle=True)
+
+        model.fit(X, np.array(Y), batch_size=batch_size, verbose=0, shuffle=True)
 
 
 def main():
@@ -162,15 +152,13 @@ def main():
     agent = RicAgent()
 
     main_model = agent.build_net(env.state.shape, len(env.action_space))
-    target_model = agent.build_net(env.state.shape, len(env.action_space))
-    target_model.set_weights(main_model.get_weights())
     replay_memory = deque(maxlen=50_000)
 
     # Hyper-parameters
-    epsilon = 1-0.9999
+    epsilon = 0.9999
 
     # Training
-    for i in range(1, 3):
+    for i in range(1, 2999):
         print(i)
         # select action (explore vs exploit)
         if random.uniform(0, 1) < epsilon:
@@ -185,13 +173,10 @@ def main():
         next_state, reward, done, truncated, info = env.step(action)
         replay_memory.append([state, action_index, reward, next_state, done])
         # Train main network
-        # if i % 4 == 0:
-        agent.train(replay_memory, main_model, target_model, done)
+        if i % 10 == 0:
+            agent.train(replay_memory, main_model, done)
         # update state
         state = next_state
-
-        if i % 50 == 0:
-            target_model.set_weights(main_model.get_weights())
 
     # Testing
     # initializing the environment
@@ -201,7 +186,7 @@ def main():
     print("pRBs_inf \t pRBs_req \t pRBs_s1 \t pRBs_s2 \t A1 \t A2")
     # prbs_s1_record = np.zeros(20)
     # prbs_s2_record = np.zeros(20)
-    for i in range(0, 3): # upper bound is exclusive
+    for i in range(0, 20): # upper bound is exclusive
         # prbs_s1_record[env.time] = env.state[3]
         # prbs_s2_record[env.time] = env.state[4]
         # select action (exploit)
@@ -217,6 +202,44 @@ def main():
 
         # update state
         state = next_state
+
+    # Testing other inputs
+    print("TESTING OTHER INPUTS")
+    env.state = np.array([3, 1, 1, 0, 0])
+    print("State: ", env.state)
+    predicted = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()  # Exploit learned values
+    print("Q-values: ")
+    print(np.reshape(np.round(predicted, 3), (5, 5)))
+
+    env.state = np.array([3, 1, 1, 0, 1])
+    print("State: ", env.state)
+    predicted = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()  # Exploit learned values
+    print("Q-values: ")
+    print(np.reshape(np.round(predicted, 3), (5, 5)))
+
+    env.state = np.array([2, 1, 1, 0, 0])
+    print("State: ", env.state)
+    predicted = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()  # Exploit learned values
+    print("Q-values: ")
+    print(np.reshape(np.round(predicted, 3), (5, 5)))
+
+    env.state = np.array([5, 2, 2, 0, 0])
+    print("State: ", env.state)
+    predicted = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()  # Exploit learned values
+    print("Q-values: ")
+    print(np.reshape(np.round(predicted, 3), (5, 5)))
+
+    env.state = np.array([6, 2, 2, 0, 0])
+    print("State: ", env.state)
+    predicted = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()  # Exploit learned values
+    print("Q-values: ")
+    print(np.reshape(np.round(predicted, 3), (5, 5)))
+
+    env.state = np.array([6, 1, 1, 2, 2])
+    print("State: ", env.state)
+    predicted = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()  # Exploit learned values
+    print("Q-values: ")
+    print(np.reshape(np.round(predicted, 3), (5, 5)))
 
 
 if __name__ == "__main__":
