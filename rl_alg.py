@@ -101,82 +101,94 @@ class RicEnv():
         truncated = False
         return tuple(self.state), reward, done, truncated, info
 
-
-# create environment
-env = RicEnv()
-state = tuple(env.state)
-
-# initialize q table
-# Here, the upper bound is exclusive
-prbs_inf_states = np.arange(0, max_prbs_inf+1)
-prbs_req_s1_states = np.arange(min_req_prbs, max_req_prbs+1)
-prbs_req_s2_states = np.arange(min_req_prbs, max_req_prbs+1)
-prbs_curr_s1_states = np.arange(min_curr_prbs, max_curr_prbs+1)
-prbs_curr_s2_states = np.arange(min_curr_prbs, max_curr_prbs+1)
-row_indices = pd.MultiIndex.from_product([prbs_inf_states, prbs_req_s1_states, prbs_req_s2_states, prbs_curr_s1_states, prbs_curr_s2_states])
-action1_space = np.arange(min_allocate, max_allocate+1)
-action2_space = np.arange(min_allocate, max_allocate+1)
-col_indices = pd.MultiIndex.from_product([action1_space, action2_space])
-q_values = np.zeros([np.size(prbs_inf_states)*np.size(prbs_req_s1_states)*np.size(prbs_req_s2_states)*np.size(prbs_curr_s1_states)*np.size(prbs_curr_s2_states),
-                     np.size(action1_space)*np.size(action2_space)])
-q_table = pd.DataFrame(q_values, columns=col_indices, index=row_indices)
-
-# Hyperparameters
-alpha = 0.99999
-gamma = 0.00001
-epsilon = 0.9999
-
-# Training
-for i in range(1, 50000):
-    print(i)
-    # select action (explore vs exploit)
-    if random.uniform(0, 1) < epsilon:
-        action = env.action_space.sample().index[0] # Explore action space
-    else:
+def test(env):
+    # load q-table
+    q_table = pd.read_pickle('q_table.pkl')
+    # initializing the environment
+    env.time = 0
+    env.state = np.array(
+        [prbs_inf_init, env.prbs_req_data[env.time], env.prbs_req_data[env.time], min_curr_prbs, min_curr_prbs])
+    state = tuple(env.state)
+    print("pRBs_inf \t pRBs_req \t pRBs_s1 \t pRBs_s2 \t A1 \t A2")
+    # prbs_s1_record = np.zeros(20)
+    # prbs_s2_record = np.zeros(20)
+    for i in range(0, 20):  # upper bound is exclusive
+        # prbs_s1_record[env.time] = env.state[3]
+        # prbs_s2_record[env.time] = env.state[4]
+        # select action (exploit)
         action = q_table.loc[state].idxmax()  # Exploit learned values
+        print("{} \t \t {} \t \t {} \t \t {} \t \t {}  \t {}".format(env.state[0],
+                                                                     env.prbs_req_data[env.time], env.state[3],
+                                                                     env.state[4],
+                                                                     action[0], action[1]))
+        # move 1 step forward
+        next_state, reward, done, truncated, info = env.step(action)
 
-    # move 1 step forward
-    next_state, reward, done, truncated, info = env.step(action)
-    # update q-value
-    old_value = q_table.loc[state, action]
-    next_max = q_table.loc[next_state].max()
-    new_value = (1 - alpha) * old_value + alpha * (reward + (gamma * next_max))
-    # new_value = reward # not using bellman equation
-    q_table.loc[state, action] = new_value
-    # update state
-    state = next_state
+        # update state
+        state = next_state
 
-q_table.to_csv('q_table.csv')
+    # plot.plot(np.arange(0, 20), env.prbs_req_data, marker='o')
+    # plot.title('pRBs Required')
+    # plot.show()
+    # plot.plot(np.arange(0, 20), prbs_s1_record, marker='o')
+    # plot.title('pRBs Slice 1')
+    # plot.show()
+    # plot.plot(np.arange(0, 20), prbs_s2_record, marker='o')
+    # plot.title('pRBs Slice 2')
+    # plot.show()
 
-# Testing
-# initializing the environment
-env.time = 0
-env.state = np.array([prbs_inf_init, env.prbs_req_data[env.time], env.prbs_req_data[env.time], min_curr_prbs, min_curr_prbs])
-state = tuple(env.state)
-print("pRBs_inf \t pRBs_req \t pRBs_s1 \t pRBs_s2 \t A1 \t A2")
-# prbs_s1_record = np.zeros(20)
-# prbs_s2_record = np.zeros(20)
-for i in range(0, 20): # upper bound is exclusive
-    # prbs_s1_record[env.time] = env.state[3]
-    # prbs_s2_record[env.time] = env.state[4]
-    # select action (exploit)
-    action = q_table.loc[state].idxmax()  # Exploit learned values
-    print("{} \t \t {} \t \t {} \t \t {} \t \t {}  \t {}".format(env.state[0],
-                                                                             env.prbs_req_data[env.time], env.state[3],
-                                                                             env.state[4],
-                                                                             action[0], action[1]))
-    # move 1 step forward
-    next_state, reward, done, truncated, info = env.step(action)
+def main():
+    # create environment
+    env = RicEnv()
+    state = tuple(env.state)
 
-    # update state
-    state = next_state
+    # initialize q table
+    # Here, the upper bound is exclusive
+    prbs_inf_states = np.arange(0, max_prbs_inf+1)
+    prbs_req_s1_states = np.arange(min_req_prbs, max_req_prbs+1)
+    prbs_req_s2_states = np.arange(min_req_prbs, max_req_prbs+1)
+    prbs_curr_s1_states = np.arange(min_curr_prbs, max_curr_prbs+1)
+    prbs_curr_s2_states = np.arange(min_curr_prbs, max_curr_prbs+1)
+    row_indices = pd.MultiIndex.from_product([prbs_inf_states, prbs_req_s1_states, prbs_req_s2_states, prbs_curr_s1_states, prbs_curr_s2_states])
+    action1_space = np.arange(min_allocate, max_allocate+1)
+    action2_space = np.arange(min_allocate, max_allocate+1)
+    col_indices = pd.MultiIndex.from_product([action1_space, action2_space])
+    q_values = np.zeros([np.size(prbs_inf_states)*np.size(prbs_req_s1_states)*np.size(prbs_req_s2_states)*np.size(prbs_curr_s1_states)*np.size(prbs_curr_s2_states),
+                         np.size(action1_space)*np.size(action2_space)])
+    q_table = pd.DataFrame(q_values, columns=col_indices, index=row_indices)
 
-# plot.plot(np.arange(0, 20), env.prbs_req_data)
-# plot.title('pRBs Required')
-# plot.show()
-# plot.plot(np.arange(0, 20), prbs_s1_record)
-# plot.title('pRBs Slice 1')
-# plot.show()
-# plot.plot(np.arange(0, 20), prbs_s2_record)
-# plot.title('pRBs Slice 2')
-# plot.show()
+    # Hyperparameters
+    alpha = 0.99999
+    gamma = 0.00001
+    epsilon = 0.9999
+
+    # Training
+    for i in range(1, 200000):
+        print(i)
+        # select action (explore vs exploit)
+        if random.uniform(0, 1) < epsilon:
+            action = env.action_space.sample().index[0] # Explore action space
+        else:
+            action = q_table.loc[state].idxmax()  # Exploit learned values
+
+        # move 1 step forward
+        next_state, reward, done, truncated, info = env.step(action)
+        # update q-value
+        old_value = q_table.loc[state, action]
+        next_max = q_table.loc[next_state].max()
+        new_value = (1 - alpha) * old_value + alpha * (reward + (gamma * next_max))
+        # new_value = reward # not using bellman equation
+        q_table.loc[state, action] = new_value
+        # update state
+        state = next_state
+
+    q_table.to_csv('q_table.csv')
+    # Save the q-table to a pickle file
+    q_table.to_pickle('q_table.pkl')
+
+    # Testing
+    test(env)
+
+
+if __name__ == "__main__":
+    main()
