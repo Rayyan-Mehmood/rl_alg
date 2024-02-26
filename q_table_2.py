@@ -12,12 +12,15 @@ row_indices = pd.MultiIndex.from_product([prbs_inf_states, prbs_req_s1_states, p
 action1_space = np.arange(-2, 3)
 action2_space = np.arange(-2, 3)
 col_indices = pd.MultiIndex.from_product([action1_space, action2_space])
+# print(col_indices)
+# print(col_indices.get_loc((-2, -2)))
 q_table = pd.DataFrame(q_values, columns=col_indices, index=row_indices)
+print(q_table)
 q_table.loc[(0, -2, 2), (-2, -2)] = 5
 # return action with max q value for a given state:
 # q_table.loc[(0, -2, 2)].idxmax()
 # return max q value for a given state
 # q_table.loc[(0, -2, 2)].max()
-q_table = pd.read_csv('file_name.csv')
+# q_table = pd.read_csv('file_name.csv')
 # print(q_table.loc[tuple(np.array([0, -2, -2])), (-2, -2)])
-q_table.to_csv('delete.csv')
+# q_table.to_csv('delete.csv')
