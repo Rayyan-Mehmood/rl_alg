@@ -27,7 +27,7 @@ class RicEnv():
         # self.episode_length = np.arange(0, 10, 0.5)
         # self.prbs_req_data = np.rint((max_req_prbs / 2) * np.sin(episode_length) + max_req_prbs / 2)
         # self.prbs_req_data = np.genfromtxt('data_sin.csv', delimiter=',')
-        self.episode_length = 30  # length of data is 1897
+        self.episode_length = 1  # length of data is 1897
         excel_file_path = 'data/data_real_10_slices.xlsx'
         data_frame = pd.read_excel(excel_file_path, skiprows=1, header=None)
         prbs_req_data_s1 = data_frame[2].values  # row C
@@ -105,12 +105,46 @@ class RicEnv():
             difference_s1 = req_prbs_s1 - curr_prbs_s1
             difference_s2 = req_prbs_s2 - curr_prbs_s2
             difference_s3 = req_prbs_s3 - curr_prbs_s3
-            ideal_action_0 = round((difference_s1/(difference_s1+difference_s2+difference_s3-0.00001)) * prbs_inf)
-            ideal_action_1 = round((difference_s2/(difference_s1+difference_s2+difference_s3+0.00001)) * prbs_inf)
-            ideal_action_2 = round((difference_s3/(difference_s1+difference_s2+difference_s3+0.00001)) * prbs_inf)
-            prev_state[1] = round(prev_state[4] + ideal_action_0)
-            prev_state[2] = round(prev_state[5] + ideal_action_1)
-            prev_state[3] = round(prev_state[6] + ideal_action_2)
+            # calculating the optimal actions
+            if difference_s1 < 0 and difference_s2 > 0 and difference_s3 > 0:
+                prbs_inf = prbs_inf - difference_s1
+                oa1 = difference_s1
+                oa2 = round((difference_s2 / (difference_s2 + difference_s3 - 0.00001)) * prbs_inf)
+                oa3 = round((difference_s3 / (difference_s2 + difference_s3 + 0.00001)) * prbs_inf)
+            elif difference_s1 > 0 and difference_s2 < 0 and difference_s3 > 0:
+                prbs_inf = prbs_inf - difference_s2
+                oa2 = difference_s2
+                oa1 = round((difference_s1 / (difference_s1 + difference_s3 - 0.00001)) * prbs_inf)
+                oa3 = round((difference_s3 / (difference_s1 + difference_s3 + 0.00001)) * prbs_inf)
+            elif difference_s1 > 0 and difference_s2 > 0 and difference_s3 < 0:
+                prbs_inf = prbs_inf - difference_s3
+                oa3 = difference_s3
+                oa1 = round((difference_s1 / (difference_s1 + difference_s2 - 0.00001)) * prbs_inf)
+                oa2 = round((difference_s2 / (difference_s1 + difference_s2 + 0.00001)) * prbs_inf)
+            elif difference_s1 < 0 and difference_s2 < 0 and difference_s3 > 0:
+                prbs_inf = prbs_inf - difference_s1 - difference_s2
+                oa1 = difference_s1
+                oa2 = difference_s2
+                oa3 = prbs_inf
+            elif difference_s1 < 0 and difference_s2 > 0 and difference_s3 < 0:
+                prbs_inf = prbs_inf - difference_s1 - difference_s3
+                oa1 = difference_s1
+                oa2 = prbs_inf
+                oa3 = difference_s3
+            elif difference_s1 > 0 and difference_s2 < 0 and difference_s3 < 0:
+                prbs_inf = prbs_inf - difference_s2 - difference_s3
+                oa1 = prbs_inf
+                oa2 = difference_s2
+                oa3 = difference_s3
+            else:
+                # all differences are positive
+                oa1 = round((difference_s1 / (difference_s1 + difference_s2 + difference_s3)) * prbs_inf)
+                oa2 = round((difference_s2 / (difference_s1 + difference_s2 + difference_s3)) * prbs_inf)
+                oa3 = prbs_inf - oa1 - oa2  # allocate whatever is left
+
+            prev_state[1] = round(prev_state[4] + oa1)
+            prev_state[2] = round(prev_state[5] + oa2)
+            prev_state[3] = round(prev_state[6] + oa3)
 
         total_reward = 0
         individual_reward = 0
@@ -196,7 +230,7 @@ def main():
     alpha = 0.99999
     gamma = 0.00001
     epsilon = 0.9999
-    num_episodes = 30
+    num_episodes = 1
 
     # Training
     for episode in range(1, num_episodes+1):
@@ -222,8 +256,8 @@ def main():
             # update state
             state = next_state
 
-    env.q_table.to_csv('Test_22_5.csv')
-    env.q_table.to_pickle('Test_22_5.pkl')
+    # env.q_table.to_csv('Test_22_6.csv')
+    # env.q_table.to_pickle('Test_22_6.pkl')
 
     # Testing
     #test(env)
