@@ -4,9 +4,9 @@ import pandas as pd
 import matplotlib.pyplot as plot
 
 num_slices = 3
-max_prbs_inf = 12
+max_prbs_inf = 50
 prbs_inf_init = max_prbs_inf
-max_req_prbs = 6  # max total prbs a slice can require
+max_req_prbs = 35  # max total prbs a slice can require
 min_req_prbs = 0
 max_curr_prbs = max_req_prbs
 min_curr_prbs = 0
@@ -27,7 +27,7 @@ class RicEnv():
         # self.episode_length = np.arange(0, 10, 0.5)
         # self.prbs_req_data = np.rint((max_req_prbs / 2) * np.sin(episode_length) + max_req_prbs / 2)
         # self.prbs_req_data = np.genfromtxt('data_sin.csv', delimiter=',')
-        self.episode_length = 1  # length of data is 1897
+        self.episode_length = 1897  # length of data is 1897
         excel_file_path = 'data/data_real_10_slices.xlsx'
         data_frame = pd.read_excel(excel_file_path, skiprows=1, header=None)
         prbs_req_data_s1 = data_frame[2].values  # row C
@@ -256,8 +256,8 @@ def main():
             # update state
             state = next_state
 
-    # env.q_table.to_csv('Test_22_6.csv')
-    # env.q_table.to_pickle('Test_22_6.pkl')
+    env.q_table.to_csv('Test_23_train.csv')
+    env.q_table.to_pickle('Test_23_train.pkl')
 
     # Testing
     #test(env)
