@@ -16,12 +16,14 @@ max_curr_prbs = 35
 min_curr_prbs = 0
 max_allocate = 35
 min_allocate = -35
-num_iterations = 0
-testing_iterations = 12
+num_iterations = 5000
+testing_iterations = 50
 epsilon = 0.5
 impossible_action_reward = -150
-show_plots = False
-# initial_epsilon = 0.7
+show_plots = True
+old_model = "test_28_7.h5"
+new_model = "test_28_7.h5"
+# initial_epsilon = 0.9
 # final_epsilon = 0.4
 
 class RicEnv:
@@ -63,7 +65,7 @@ class RicEnv:
 
         return individual_reward
 
-    def step(self, action, testing=False):
+    def step(self, action, testing=False, bounded=True):
         # save the current state
         prev_state = list(self.state)
         prbs_inf = prev_state[0]
@@ -79,7 +81,7 @@ class RicEnv:
         new_curr_prbs_s2 = curr_prbs_s2 + action[1]
         new_curr_prbs_s3 = curr_prbs_s3 + action[2]
         self.time = self.time + 1  # update time
-        if self.time >= self.episode_length:
+        if self.time >= self.episode_length and not testing:
             self.time = 0  # reset time
         if not testing:
             self.state = np.array([new_prbs_inf, random.randint(0, max_req_prbs), random.randint(0, max_req_prbs),
@@ -150,27 +152,27 @@ class RicEnv:
         # Impossible actions (which lead to prbs_inf being negative for e.g.) are punished heavily
         if new_prbs_inf < 0:
             reward = impossible_action_reward
-            self.state[0] = 0  # set prbs_inf to zero
+            if bounded: self.state[0] = 0  # set prbs_inf to zero
         elif new_prbs_inf > max_prbs_inf:
-            self.state[0] = max_prbs_inf
+            if bounded: self.state[0] = max_prbs_inf
 
         if new_curr_prbs_s1 < 0:
             reward = impossible_action_reward
-            self.state[4] = 0
+            if bounded: self.state[4] = 0
         elif new_curr_prbs_s1 > max_curr_prbs:
-            self.state[4] = max_curr_prbs
+            if bounded: self.state[4] = max_curr_prbs
 
         if new_curr_prbs_s2 < 0:
             reward = impossible_action_reward
-            self.state[5] = 0
+            if bounded: self.state[5] = 0
         elif new_curr_prbs_s2 > max_curr_prbs:
-            self.state[5] = max_curr_prbs
+            if bounded: self.state[5] = max_curr_prbs
 
         if new_curr_prbs_s3 < 0:
             reward = impossible_action_reward
-            self.state[6] = 0
+            if bounded: self.state[6] = 0
         elif new_curr_prbs_s3 > max_curr_prbs:
-            self.state[6] = max_curr_prbs
+            if bounded: self.state[6] = max_curr_prbs
 
         if self.time == 0:
             self.state[0] = prbs_inf_init
@@ -235,6 +237,7 @@ def test_other_inputs(env, main_model):
         q_value = np.max(predictions)
         print("Action: ", action)
         print("Q-value: ", q_value)
+        print(predictions[env.action_space_MI.get_loc((2, 2, 2))])
 
     # Testing other inputs
     print("TESTING OTHER INPUTS")
@@ -246,6 +249,7 @@ def test_other_inputs(env, main_model):
     print_testcase(env, main_model, np.array([35, 1, 6, 8, 5, 5, 5]))
     print_testcase(env, main_model, np.array([33, 4, 0, 6, 7, 4, 6]))
     print_testcase(env, main_model, np.array([31, 10, 3, 3, 8, 2, 9]))
+
 
     # prbs req > 10
     # print_testcase(env, main_model, np.array([37, 25, 14, 3, 5, 6, 2]))
@@ -264,6 +268,7 @@ def test(env, main_model):
     num_impossible_actions = 0
     num_under_allocations = 0
     num_over_allocations = 0
+    num_correct_allocations = 0
     total_under_allocated = 0
     total_over_allocated = 0
     cumulative_reward = 0
@@ -275,13 +280,13 @@ def test(env, main_model):
     for i in range(0, testing_iterations):  # upper bound is exclusive
         state = tuple(env.state)
         # select action (exploit)
-        predictions = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()  # Exploit learned values
+        predictions = main_model.predict(env.state.reshape([1, env.state.shape[0]]), verbose=0).flatten()  # Exploit learned values
         action = env.action_space_MI[np.argmax(predictions)]
         q_value = np.max(predictions)
-        # print("State: ", env.state, "\t Action: ", action, "\t Q-value: ", q_value)
+        print(i, ": State: ", env.state, "\t Action: ", action, "\t Q-value: ", q_value)
         # print(' '.join(map(str, env.state)), ' '.join(map(str, action)), q_value)
         # move 1 step forward
-        next_state, reward, done, truncated, info = env.step(action, True)
+        next_state, reward, done, truncated, info = env.step(action, True, False)
 
         # Test metrics
         cumulative_reward += reward
@@ -302,12 +307,15 @@ def test(env, main_model):
             elif allocated > prev_req:  # over-allocation
                 num_over_allocations += 1
                 total_over_allocated += allocated - prev_req
+            else:
+                num_correct_allocations += 1
 
         state = next_state
 
     print("Number of Impossible Actions: ", num_impossible_actions)
     print("Number of Under-allocations: ", num_under_allocations)
     print("Number of Over-allocations: ", num_over_allocations)
+    print("Number of Correct Allocations: ", num_correct_allocations)
     print("Total amount Under-allocated: ", total_under_allocated)
     print("Total amount Over-allocated: ", total_over_allocated)
     print("Cumulative Reward: ", cumulative_reward)
@@ -317,7 +325,10 @@ def test(env, main_model):
         plot.plot(np.arange(0, testing_iterations), s1_record, marker='x', label='Allocated')
         plot.title('Slice 1')
         plot.grid(True)
-        plot.xticks(np.arange(0, testing_iterations, 1))
+        plot.xticks(np.arange(0, testing_iterations, 4))
+        plot.yticks(np.arange(int(min(min(env.prbs_req_s1[:testing_iterations]), min(s1_record))),
+                              int(max(max(env.prbs_req_s1[:testing_iterations]), max(s1_record))) + 1, 4))
+        plot.legend()
         plot.savefig('Slice_1.jpg')
         plot.show()
 
@@ -325,7 +336,10 @@ def test(env, main_model):
         plot.plot(np.arange(0, testing_iterations), s2_record, marker='x', label='Allocated')
         plot.title('Slice 2')
         plot.grid(True)
-        plot.xticks(np.arange(0, testing_iterations, 1))
+        plot.xticks(np.arange(0, testing_iterations, 4))
+        plot.yticks(np.arange(int(min(min(env.prbs_req_s2[:testing_iterations]), min(s2_record))),
+                              int(max(max(env.prbs_req_s2[:testing_iterations]), max(s2_record))) + 1, 4))
+        plot.legend()
         plot.savefig('Slice_2.jpg')
         plot.show()
 
@@ -333,7 +347,10 @@ def test(env, main_model):
         plot.plot(np.arange(0, testing_iterations), s3_record, marker='x', label='Allocated')
         plot.title('Slice 3')
         plot.grid(True)
-        plot.xticks(np.arange(0, testing_iterations, 1))
+        plot.xticks(np.arange(0, testing_iterations, 4))
+        plot.yticks(np.arange(int(min(min(env.prbs_req_s3[:testing_iterations]), min(s3_record))),
+                              int(max(max(env.prbs_req_s3[:testing_iterations]), max(s3_record))) + 1, 4))
+        plot.legend()
         plot.savefig('Slice_3.jpg')
         plot.show()
 
@@ -345,17 +362,20 @@ def main():
     agent = RicAgent()
 
     # main_model = agent.build_net(env.state.shape, len(env.action_space))
-    main_model = load_model("test_25_3.h5")
+    main_model = load_model(old_model)
+    # learning_rate = 0.5
+    # optimizer = keras.optimizers.Nadam(learning_rate=learning_rate)
+    # main_model.compile(loss='mse', optimizer=optimizer, metrics=['accuracy'])
     replay_memory = deque(maxlen=50_000)
 
     # Training
     for i in range(1, num_iterations):
         print(i)
         # epsilon = initial_epsilon - (i / num_iterations) * (initial_epsilon - final_epsilon)
-
         # select action (explore vs exploit)
         if random.uniform(0, 1) < epsilon:
-            action = env.action_space.sample().index[0]  # Explore action space
+            action = env.action_space.sample().index[0]
+            # action = (random.randint(-5, 5), random.randint(-5, 5), random.randint(-5, 5))
             action_index = env.action_space_MI.get_loc(action)
         else:
             predictions = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten() # Exploit learned values
@@ -363,7 +383,7 @@ def main():
             action_index = env.action_space_MI.get_loc(action)
 
         # move 1 step forward
-        next_state, reward, done, truncated, info = env.step(action)
+        next_state, reward, done, truncated, info = env.step(action, False, True)
         replay_memory.append([state, action_index, reward, next_state, done])
         # Train main network
         if i % 10 == 0:
@@ -372,10 +392,10 @@ def main():
         state = next_state
 
     # Save model
-    # main_model.save("test_26_1.h5")
+    main_model.save(new_model)
     # Testing
-    test(env, main_model)
-    # test_other_inputs(env, main_model)
+    # test(env, main_model)
+    test_other_inputs(env, main_model)
 
 
 if __name__ == "__main__":
