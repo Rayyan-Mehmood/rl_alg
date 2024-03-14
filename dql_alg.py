@@ -7,6 +7,8 @@ import keras
 from keras.models import load_model
 from collections import deque
 
+
+# Parameters
 num_slices = 3
 prbs_inf_init = 3
 max_prbs_inf = prbs_inf_init
@@ -23,6 +25,7 @@ initial_epsilon = 0.99
 final_epsilon = 0.01
 impossible_action_reward = -5
 show_plots = True
+# names of the files from which to load the models and save the models to
 old_main_model = "test_29_1_m.h5"
 new_main_model = "test_29_1_m.h5"
 old_target_model = "test_29_1_t.h5"
@@ -38,17 +41,19 @@ class RicEnv:
         self.action_space_MI = pd.MultiIndex.from_product([action1_space, action2_space, action3_space])
         self.action_space = pd.DataFrame(index=self.action_space_MI, columns=['Value'])
 
-        excel_file_path = 'data/data_real_10_slices.xlsx'
-        data_frame = pd.read_excel(excel_file_path, skiprows=1, header=None)
-        prbs_req_data_s1 = data_frame[2].values  # row C
-        prbs_req_data_s2 = data_frame[3].values  # row D
-        prbs_req_data_s3 = data_frame[6].values  # row D
-        self.prbs_req_s1 = np.round(np.array(prbs_req_data_s1)).astype(int)
-        self.prbs_req_s2 = np.round(np.array(prbs_req_data_s2)).astype(int)
-        self.prbs_req_s3 = np.round(np.array(prbs_req_data_s3)).astype(int)
-        # Creating function of req_prbs
+        # using the required prbs data from the real data
+        # excel_file_path = 'data/data_real_10_slices.xlsx'
+        # data_frame = pd.read_excel(excel_file_path, skiprows=1, header=None)
+        # prbs_req_data_s1 = data_frame[2].values  # row C
+        # prbs_req_data_s2 = data_frame[3].values  # row D
+        # prbs_req_data_s3 = data_frame[6].values  # row D
+        # self.prbs_req_s1 = np.round(np.array(prbs_req_data_s1)).astype(int)
+        # self.prbs_req_s2 = np.round(np.array(prbs_req_data_s2)).astype(int)
+        # self.prbs_req_s3 = np.round(np.array(prbs_req_data_s3)).astype(int)
+        # generating required prbs from a cosine wave
         # sine_time_range = np.arange(0, 10, 0.5) # generating manually
         # self.prbs_req_data = np.rint((max_req_prbs / 2) * np.sin(sine_time_range) + max_req_prbs / 2)  # already changed to cosine
+        # initializing the state
         self.time = 0
         self.state = np.array([prbs_inf_init, random.randint(0, max_req_prbs), random.randint(0, max_req_prbs),
                                random.randint(0, max_req_prbs), min_curr_prbs, min_curr_prbs, min_curr_prbs])
@@ -58,20 +63,10 @@ class RicEnv:
         self.state = np.array([prbs_inf_init, random.randint(0, max_req_prbs), random.randint(0, max_req_prbs),
                                random.randint(0, max_req_prbs), min_curr_prbs, min_curr_prbs, min_curr_prbs])
 
-    # Calculates the individual reward for each slice based on the slice requirements and the amount of pRBs it
-    # currently has
-    def calc_individual_reward(self, r, a):
-        # r = number of pRBs slice requires
-        # a = number of pRBs slice currently has
-        if a == r:
-            individual_reward = 10
-        elif a > r:
-            individual_reward = 5
-        else:
-            individual_reward = -5
 
-        return individual_reward
-
+    # testing is true when we are testing the model
+    # bounded is true when we want to bound the state space during training so that the agent never explores
+    # out-of-bounds states during training
     def step(self, action, testing=False, bounded=True):
         # save the current state
         prev_state = list(self.state)
@@ -82,27 +77,30 @@ class RicEnv:
         curr_prbs_s1 = prev_state[4]
         curr_prbs_s2 = prev_state[5]
         curr_prbs_s3 = prev_state[6]
-        # update the state
+        # update the state (inf_prbs and curr_prbs)
         new_prbs_inf = self.state[0] - action[0] - action[1] - action[2]
         new_curr_prbs_s1 = curr_prbs_s1 + action[0]
         new_curr_prbs_s2 = curr_prbs_s2 + action[1]
         new_curr_prbs_s3 = curr_prbs_s3 + action[2]
         # update the time
         self.time = self.time + 1
-        # update the state
+        # update the state (required prbs)
         if not testing:
+            # during training, we generate the required prbs data randomly
             self.state = np.array([new_prbs_inf, random.randint(0, max_req_prbs), random.randint(0, max_req_prbs),
                                random.randint(0, max_req_prbs), new_curr_prbs_s1, new_curr_prbs_s2, new_curr_prbs_s3])
         else:
+            # during testing, we take the required prbs from the real data
             self.state = np.array([new_prbs_inf, self.prbs_req_s1[self.time], self.prbs_req_s2[self.time],
                                self.prbs_req_s3[self.time], new_curr_prbs_s1, new_curr_prbs_s2,
                                    new_curr_prbs_s3])
 
         # Calculate Reward
 
-        # If not enough pRBs available, calculate the ideal action and then update the required pRBs for each slice
-        # for example, if there are 2 pRBs available and each slice has 0 pRBs and requires 2 pRBs,
-        # the ideal action would be to allocate 1 to each slice. Thus, the required pRBs for each slice will become 1.
+        # This if branch updates the required prbs when there are not enough prbs available.
+        # For example, if each slice requires 2 prbs but there are only 3 prbs available, the required prbs will be
+        # updated to 1 (because the best possible action is to allocate 1 prb to each slice). Therefore, it will be
+        # possible for the allocated to be equal to the required and for the agent to receive max reward
         if prbs_inf - (req_prbs_s1 - curr_prbs_s1) - (req_prbs_s2 - curr_prbs_s2) - (req_prbs_s3 - curr_prbs_s3) < 0:
             difference_s1 = req_prbs_s1 - curr_prbs_s1
             difference_s2 = req_prbs_s2 - curr_prbs_s2
@@ -148,7 +146,8 @@ class RicEnv:
             prev_state[2] = round(prev_state[5] + oa2)
             prev_state[3] = round(prev_state[6] + oa3)
 
-        # Calculate the individual reward for each slice and then sum the rewards
+        # Calculate the reward for each slice
+        # e.g. if any of the slices are under allocated, 'under' will be flagged as true and total reward will be -5
         impossible = False
         under = False
         over = False
@@ -162,6 +161,9 @@ class RicEnv:
             elif a > r:
                 over = True
 
+        if new_prbs_inf < 0:
+            impossible = True
+
         if impossible:
             reward = -5
         elif under:
@@ -172,26 +174,27 @@ class RicEnv:
             reward = 10
 
         # Bounding the states...
-        if new_prbs_inf < 0:
-            reward = impossible_action_reward
-            if bounded: self.state[0] = 0  # set prbs_inf to zero
-        elif new_prbs_inf > max_prbs_inf:
-            if bounded: self.state[0] = max_prbs_inf
+        if bounded:
+            if new_prbs_inf < 0:
+                self.state[0] = 0  # set prbs_inf to zero
+            elif new_prbs_inf > max_prbs_inf:
+                self.state[0] = max_prbs_inf
 
-        if new_curr_prbs_s1 < 0:
-            if bounded: self.state[4] = 0
-        elif new_curr_prbs_s1 > max_curr_prbs:
-            if bounded: self.state[4] = max_curr_prbs
+            if new_curr_prbs_s1 < 0:
+                self.state[4] = 0
+            elif new_curr_prbs_s1 > max_curr_prbs:
+                self.state[4] = max_curr_prbs
 
-        if new_curr_prbs_s2 < 0:
-            if bounded: self.state[5] = 0
-        elif new_curr_prbs_s2 > max_curr_prbs:
-            if bounded: self.state[5] = max_curr_prbs
+            if new_curr_prbs_s2 < 0:
+                self.state[5] = 0
+            elif new_curr_prbs_s2 > max_curr_prbs:
+                self.state[5] = max_curr_prbs
 
-        if new_curr_prbs_s3 < 0:
-            if bounded: self.state[6] = 0
-        elif new_curr_prbs_s3 > max_curr_prbs:
-            if bounded: self.state[6] = max_curr_prbs
+            if new_curr_prbs_s3 < 0:
+                self.state[6] = 0
+            elif new_curr_prbs_s3 > max_curr_prbs:
+                self.state[6] = max_curr_prbs
+
 
         info = {}
         if self.time >= episode_length:
@@ -246,6 +249,7 @@ class RicAgent:
         model.fit(np.array(X), np.array(Y), batch_size=batch_size, verbose=0, shuffle=True)
 
 
+# Testing with hardcoded inputs
 def test_other_inputs(env, main_model, target_model):
     def print_testcase(env, main_model, state, target_model):
         env.state = state
@@ -255,32 +259,9 @@ def test_other_inputs(env, main_model, target_model):
         q_value = np.max(predictions)
         print("Action: ", action)
         print("Main Model Q-value: ", q_value)
-        # predictions = target_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()
-        # q_value = np.max(predictions)
-        # print("Target Model Q-value: ", q_value)
-        # print(predictions[env.action_space_MI.get_loc((2, 2, 2))])
 
     # Testing other inputs
     print("TESTING OTHER INPUTS")
-
-    # print_testcase(env, main_model, np.array([50, 2, 2, 2, 0, 0, 0]))
-    # print_testcase(env, main_model, np.array([40, 0, 0, 0, 2, 6, 2]))
-    # print_testcase(env, main_model, np.array([48, 0, 9, 7, 0, 0, 2]))
-    # print_testcase(env, main_model, np.array([40, 1, 6, 2, 6, 2, 2]))
-    # print_testcase(env, main_model, np.array([35, 1, 6, 8, 5, 5, 5]))
-    # print_testcase(env, main_model, np.array([33, 4, 0, 6, 7, 4, 6]))
-    # print_testcase(env, main_model, np.array([31, 10, 3, 3, 8, 2, 9]))
-
-    # print_testcase(env, main_model, np.array([50, 2, 2, 2, 0, 0, 0]))
-    # print_testcase(env, main_model, np.array([50, 1, 1, 1, 0, 0, 0]))
-    # print_testcase(env, main_model, np.array([50, 0, 0, 0, 0, 0, 0]))
-    # print_testcase(env, main_model, np.array([50, 1, 0, 1, 0, 0, 0]))
-    # print_testcase(env, main_model, np.array([50, 1, 1, 1, 1, 1, 1]))
-    # print_testcase(env, main_model, np.array([50, 1, 1, 1, 2, 0, 0]))
-    # print_testcase(env, main_model, np.array([50, 1, 1, 1, 0, 2, 0]))
-    # print_testcase(env, main_model, np.array([50, 1, 1, 1, 0, 1, 1]))
-    # print_testcase(env, main_model, np.array([50, 2, 1, 2, 0, 0, 0]))
-    # print_testcase(env, main_model, np.array([50, 1, 2, 0, 2, 0, 0]))
 
     print_testcase(env, main_model, np.array([3, 0, 0, 0, 0, 0, 0]), target_model)
     print_testcase(env, main_model, np.array([3, 1, 1, 1, 0, 0, 0]), target_model)
@@ -294,13 +275,7 @@ def test_other_inputs(env, main_model, target_model):
     print_testcase(env, main_model, np.array([0, 0, 0, 0, 1, 1, 1]), target_model)
 
 
-    # prbs req > 10
-    # print_testcase(env, main_model, np.array([37, 25, 14, 3, 5, 6, 2]))
-    # print_testcase(env, main_model, np.array([45, 0, 29, 17, 2, 1, 2]))
-    # print_testcase(env, main_model, np.array([41, 21, 16, 20, 5, 1, 3]))
-    # print_testcase(env, main_model, np.array([11, 20, 13, 13, 18, 12, 9]))
-
-
+# Testing with the real data
 def test(env, main_model):
     # Testing
     # initializing the environment
@@ -404,8 +379,8 @@ def main():
     state = tuple(env.state)
     agent = RicAgent()
 
-    main_model = agent.build_net(env.state.shape, len(env.action_space))
-    # main_model = load_model(old_main_model)
+    main_model = agent.build_net(env.state.shape, len(env.action_space)) # build the model
+    # main_model = load_model(old_main_model) # load the model
 
     target_model = agent.build_net(env.state.shape, len(env.action_space))
     # target_model = load_model(old_target_model)
@@ -437,7 +412,7 @@ def main():
             # update state
             state = next_state
 
-        # after each episode
+        # after each episode, update epsilon
         epsilon = initial_epsilon - (episode / num_episodes) * (initial_epsilon - final_epsilon)
         # Train main network every n episodes
         if episode % 10 == 0:
@@ -453,8 +428,8 @@ def main():
     main_model.save(new_main_model)
     target_model.save(new_target_model)
     # Testing
-    # test(env, main_model)
-    test_other_inputs(env, main_model, target_model)
+    # test(env, main_model)  # test on real data
+    test_other_inputs(env, main_model, target_model)  # test on hardcoded inputs
 
 if __name__ == "__main__":
     main()
