@@ -10,26 +10,30 @@ from collections import deque
 
 # Parameters
 num_slices = 3
-prbs_inf_init = 3
+prbs_inf_init = 50
 max_prbs_inf = prbs_inf_init
-max_req_prbs = 1  # max total prbs a slice can require
+max_req_prbs = 10  # max total prbs a slice can require
 min_req_prbs = 0
-max_curr_prbs = 1
+max_curr_prbs = 15
 min_curr_prbs = 0
-max_allocate = 1
-min_allocate = -1
-num_episodes = 100
-episode_length = 10
-testing_iterations = 10
+max_allocate = 50
+min_allocate = -50
+num_episodes = 10000
+episode_length = 5
+training_freq = 20
+copying_freq = 30
+testing_iterations = 20
+test_frequency = 200
 initial_epsilon = 0.99
 final_epsilon = 0.01
-impossible_action_reward = -5
+# impossible_action_reward = -5
+build = True
 show_plots = True
 # names of the files from which to load the models and save the models to
-old_main_model = "test_29_1_m.h5"
-new_main_model = "test_29_1_m.h5"
-old_target_model = "test_29_1_t.h5"
-new_target_model = "test_29_1_t.h5"
+old_main_model = "test_30_3_m.h5"
+old_target_model = "test_30_3_t.h5"
+new_main_model = "test_30_3_m.h5"
+new_target_model = "test_30_3_t.h5"
 
 
 class RicEnv:
@@ -42,14 +46,14 @@ class RicEnv:
         self.action_space = pd.DataFrame(index=self.action_space_MI, columns=['Value'])
 
         # using the required prbs data from the real data
-        # excel_file_path = 'data/data_real_10_slices.xlsx'
-        # data_frame = pd.read_excel(excel_file_path, skiprows=1, header=None)
-        # prbs_req_data_s1 = data_frame[2].values  # row C
-        # prbs_req_data_s2 = data_frame[3].values  # row D
-        # prbs_req_data_s3 = data_frame[6].values  # row D
-        # self.prbs_req_s1 = np.round(np.array(prbs_req_data_s1)).astype(int)
-        # self.prbs_req_s2 = np.round(np.array(prbs_req_data_s2)).astype(int)
-        # self.prbs_req_s3 = np.round(np.array(prbs_req_data_s3)).astype(int)
+        excel_file_path = 'data/data_real_10_slices.xlsx'
+        data_frame = pd.read_excel(excel_file_path, skiprows=1, header=None)
+        prbs_req_data_s1 = data_frame[2].values  # row C
+        prbs_req_data_s2 = data_frame[3].values  # row D
+        prbs_req_data_s3 = data_frame[6].values  # row G
+        self.prbs_req_s1 = np.round(np.array(prbs_req_data_s1)).astype(int)
+        self.prbs_req_s2 = np.round(np.array(prbs_req_data_s2)).astype(int)
+        self.prbs_req_s3 = np.round(np.array(prbs_req_data_s3)).astype(int)
         # generating required prbs from a cosine wave
         # sine_time_range = np.arange(0, 10, 0.5) # generating manually
         # self.prbs_req_data = np.rint((max_req_prbs / 2) * np.sin(sine_time_range) + max_req_prbs / 2)  # already changed to cosine
@@ -63,6 +67,19 @@ class RicEnv:
         self.state = np.array([prbs_inf_init, random.randint(0, max_req_prbs), random.randint(0, max_req_prbs),
                                random.randint(0, max_req_prbs), min_curr_prbs, min_curr_prbs, min_curr_prbs])
 
+    def calc_individual_reward(self, r, a):
+        # r = number of pRBs slice requires
+        # a = number of pRBs slice currently has
+        if a == r:
+            individual_reward = 10
+        elif a > r:
+            individual_reward = 7 - (4 * (a - r))
+        elif a < 0:
+            individual_reward = -15
+        else:
+            individual_reward = -5 - (2 * (r - a))
+
+        return individual_reward
 
     # testing is true when we are testing the model
     # bounded is true when we want to bound the state space during training so that the agent never explores
@@ -148,30 +165,15 @@ class RicEnv:
 
         # Calculate the reward for each slice
         # e.g. if any of the slices are under allocated, 'under' will be flagged as true and total reward will be -5
-        impossible = False
-        under = False
-        over = False
+        total_reward = 0
+        individual_reward = 0
         for slice in range(1, num_slices + 1):
-            a = self.state[slice + num_slices]
-            r = prev_state[slice]
-            if a < 0:
-                impossible = True
-            elif a < r:
-                under = True
-            elif a > r:
-                over = True
+            individual_reward = self.calc_individual_reward(prev_state[slice], self.state[slice + num_slices])
+            total_reward = total_reward + individual_reward
+        reward = total_reward
 
         if new_prbs_inf < 0:
-            impossible = True
-
-        if impossible:
-            reward = -5
-        elif under:
-            reward = -5
-        elif over:
-            reward = 5
-        else:
-            reward = 10
+            reward = reward - 10
 
         # Bounding the states...
         if bounded:
@@ -206,21 +208,21 @@ class RicEnv:
 
 class RicAgent:
     def build_net(self, state_shape, num_actions):
-        learning_rate = 0.01
+        learning_rate = 0.1
         optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
 
         model = keras.Sequential()
         model.add(keras.layers.Input(shape=state_shape))
-        model.add(keras.layers.Dense(24, activation='relu'))
-        model.add(keras.layers.Dense(24, activation='relu'))
-        model.add(keras.layers.Dense(num_actions, activation='linear'))
-        model.compile(loss='mse', optimizer=optimizer, metrics=['accuracy'])
+        model.add(keras.layers.Dense(128, activation='relu', kernel_initializer=keras.initializers.HeUniform()))
+        model.add(keras.layers.Dense(64, activation='relu', kernel_initializer=keras.initializers.HeUniform()))
+        model.add(keras.layers.Dense(num_actions, activation='linear', kernel_initializer=keras.initializers.HeUniform()))
+        model.compile(loss=keras.losses.Huber(), optimizer=optimizer, metrics=['accuracy'])
         # model.summary()
         return model
 
     def train(self, replay_memory, model, target_model):
-        learning_rate = 0.7
-        discount_factor = 0.3
+        alpha = 0.4
+        discount_factor = 0.2
 
         MIN_REPLAY_SIZE = 500
         if len(replay_memory) < MIN_REPLAY_SIZE:
@@ -241,7 +243,7 @@ class RicAgent:
         for index, (observation, action, reward, new_observation, done) in enumerate(mini_batch):
             max_new_q = reward + discount_factor * np.max(next_qs_list[index])
             current_qs = current_qs_list[index]
-            current_qs[action] = (1 - learning_rate) * current_qs[action] + learning_rate * max_new_q
+            current_qs[action] = (1 - alpha) * current_qs[action] + alpha * max_new_q
 
             X.append(observation)
             Y.append(current_qs)
@@ -259,20 +261,23 @@ def test_other_inputs(env, main_model, target_model):
         q_value = np.max(predictions)
         print("Action: ", action)
         print("Main Model Q-value: ", q_value)
+        # print("Predictions:")
+        # for i in range(0, len(predictions), 5):
+        #     print(predictions[i:i + 5])
 
     # Testing other inputs
     print("TESTING OTHER INPUTS")
 
-    print_testcase(env, main_model, np.array([3, 0, 0, 0, 0, 0, 0]), target_model)
-    print_testcase(env, main_model, np.array([3, 1, 1, 1, 0, 0, 0]), target_model)
-    print_testcase(env, main_model, np.array([2, 0, 0, 0, 1, 0, 0]), target_model)
-    print_testcase(env, main_model, np.array([2, 1, 1, 0, 0, 1, 0]), target_model)
-    print_testcase(env, main_model, np.array([2, 0, 0, 1, 0, 1, 0]), target_model)
-    print_testcase(env, main_model, np.array([1, 1, 0, 0, 1, 0, 1]), target_model)
-    print_testcase(env, main_model, np.array([1, 1, 1, 1, 1, 0, 1]), target_model)
-    print_testcase(env, main_model, np.array([1, 0, 0, 0, 0, 1, 1]), target_model)
-    print_testcase(env, main_model, np.array([0, 1, 1, 1, 1, 1, 1]), target_model)
-    print_testcase(env, main_model, np.array([0, 0, 0, 0, 1, 1, 1]), target_model)
+    print_testcase(env, main_model, np.array([50, 0, 0, 0, 0, 0, 0]), target_model)
+    print_testcase(env, main_model, np.array([14, 1, 3, 1, 0, 0, 1]), target_model)
+    print_testcase(env, main_model, np.array([13, 0, 2, 0, 0, 0, 2]), target_model)
+    print_testcase(env, main_model, np.array([12, 1, 1, 0, 0, 1, 2]), target_model)
+    print_testcase(env, main_model, np.array([12, 3, 0, 1, 1, 1, 1]), target_model)
+    print_testcase(env, main_model, np.array([11, 1, 0, 0, 1, 0, 3]), target_model)
+    print_testcase(env, main_model, np.array([9, 0, 3, 0, 3, 0, 3]), target_model)
+    print_testcase(env, main_model, np.array([8, 0, 0, 0, 1, 3, 3]), target_model)
+    print_testcase(env, main_model, np.array([7, 3, 3, 3, 3, 2, 3]), target_model)
+    print_testcase(env, main_model, np.array([6, 0, 1, 2, 3, 3, 3]), target_model)
 
 
 # Testing with the real data
@@ -343,9 +348,9 @@ def test(env, main_model):
         plot.plot(np.arange(0, testing_iterations), s1_record, marker='x', label='Allocated')
         plot.title('Slice 1')
         plot.grid(True)
-        plot.xticks(np.arange(0, testing_iterations, 4))
-        plot.yticks(np.arange(int(min(min(env.prbs_req_s1[:testing_iterations]), min(s1_record))),
-                              int(max(max(env.prbs_req_s1[:testing_iterations]), max(s1_record))) + 1, 4))
+        # plot.xticks(np.arange(0, testing_iterations, 4))
+        # plot.yticks(np.arange(int(min(min(env.prbs_req_s1[:testing_iterations]), min(s1_record))),
+        #                      int(max(max(env.prbs_req_s1[:testing_iterations]), max(s1_record))) + 1, 4))
         plot.legend()
         plot.savefig('Slice_1.jpg')
         plot.show()
@@ -354,9 +359,9 @@ def test(env, main_model):
         plot.plot(np.arange(0, testing_iterations), s2_record, marker='x', label='Allocated')
         plot.title('Slice 2')
         plot.grid(True)
-        plot.xticks(np.arange(0, testing_iterations, 4))
-        plot.yticks(np.arange(int(min(min(env.prbs_req_s2[:testing_iterations]), min(s2_record))),
-                              int(max(max(env.prbs_req_s2[:testing_iterations]), max(s2_record))) + 1, 4))
+        # plot.xticks(np.arange(0, testing_iterations, 4))
+        # plot.yticks(np.arange(int(min(min(env.prbs_req_s2[:testing_iterations]), min(s2_record))),
+        #                       int(max(max(env.prbs_req_s2[:testing_iterations]), max(s2_record))) + 1, 4))
         plot.legend()
         plot.savefig('Slice_2.jpg')
         plot.show()
@@ -365,13 +370,14 @@ def test(env, main_model):
         plot.plot(np.arange(0, testing_iterations), s3_record, marker='x', label='Allocated')
         plot.title('Slice 3')
         plot.grid(True)
-        plot.xticks(np.arange(0, testing_iterations, 4))
-        plot.yticks(np.arange(int(min(min(env.prbs_req_s3[:testing_iterations]), min(s3_record))),
-                              int(max(max(env.prbs_req_s3[:testing_iterations]), max(s3_record))) + 1, 4))
+        # plot.xticks(np.arange(0, testing_iterations, 4))
+        # plot.yticks(np.arange(int(min(min(env.prbs_req_s3[:testing_iterations]), min(s3_record))),
+        #                       int(max(max(env.prbs_req_s3[:testing_iterations]), max(s3_record))) + 1, 4))
         plot.legend()
         plot.savefig('Slice_3.jpg')
         plot.show()
 
+    return cumulative_reward
 
 def main():
 
@@ -379,15 +385,20 @@ def main():
     state = tuple(env.state)
     agent = RicAgent()
 
-    main_model = agent.build_net(env.state.shape, len(env.action_space)) # build the model
-    # main_model = load_model(old_main_model) # load the model
-
-    target_model = agent.build_net(env.state.shape, len(env.action_space))
-    # target_model = load_model(old_target_model)
+    if build:
+        main_model = agent.build_net(env.state.shape, len(env.action_space)) # build the model
+        target_model = agent.build_net(env.state.shape, len(env.action_space))
+    else:
+        main_model = load_model(old_main_model) # load the model
+        # learning_rate = 0.01
+        # optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
+        # main_model.compile(loss=keras.losses.Huber(), optimizer=optimizer, metrics=['accuracy'])
+        target_model = load_model(old_target_model)
     target_model.set_weights(main_model.get_weights())
 
     replay_memory = deque(maxlen=50_000)
     epsilon = initial_epsilon
+    cumulative_rewards = []
 
     # Training
     for episode in range(1, num_episodes + 1):
@@ -399,7 +410,9 @@ def main():
             print("Episode: ", episode, "Timestep: ", i)
             # select action (explore vs exploit)
             if random.uniform(0, 1) < epsilon:
-                action = env.action_space.sample().index[0]
+                # action = env.action_space.sample().index[0]
+                action = (random.randint(-max_req_prbs, max_req_prbs), random.randint(-max_req_prbs, max_req_prbs),
+                               random.randint(-max_req_prbs, max_req_prbs))
                 action_index = env.action_space_MI.get_loc(action)
             else:
                 predictions = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten() # Exploit learned values
@@ -407,7 +420,7 @@ def main():
                 action_index = env.action_space_MI.get_loc(action)
 
             # move 1 step forward
-            next_state, reward, done, truncated, info = env.step(action, False, False)
+            next_state, reward, done, truncated, info = env.step(action, False, True)
             replay_memory.append([state, action_index, reward, next_state, done])
             # update state
             state = next_state
@@ -415,21 +428,33 @@ def main():
         # after each episode, update epsilon
         epsilon = initial_epsilon - (episode / num_episodes) * (initial_epsilon - final_epsilon)
         # Train main network every n episodes
-        if episode % 10 == 0:
+        if episode % training_freq == 0:
             agent.train(replay_memory, main_model, target_model)
 
         # Update target network weights every n episodes
-        if episode % 30 == 0:
+        if episode % copying_freq == 0:
             target_model.set_weights(main_model.get_weights())
 
+        if episode % test_frequency == 0:
+            # Plot reward
+            cumulative_reward = test(env, main_model)
+            cumulative_rewards.append(cumulative_reward)
+            print(cumulative_rewards)
+            print(np.arange(test_frequency, episode + test_frequency, test_frequency))
+            plot.plot(np.arange(test_frequency, episode + test_frequency, test_frequency), cumulative_rewards, marker='o')
+            plot.title('Cumulative Reward')
+            plot.grid(True)
+            plot.savefig('Reward.jpg')
+            plot.show()
+            # Save model
+            main_model.save(new_main_model)
+            target_model.save(new_target_model)
 
 
-    # Save model
-    main_model.save(new_main_model)
-    target_model.save(new_target_model)
+
     # Testing
+    # test_other_inputs(env, main_model, target_model)  # test on hardcoded inputs
     # test(env, main_model)  # test on real data
-    test_other_inputs(env, main_model, target_model)  # test on hardcoded inputs
 
 if __name__ == "__main__":
     main()
