@@ -2,7 +2,7 @@ import numpy as np
 import random
 import pandas as pd
 import matplotlib.pyplot as plot
-import tensorflow as tf
+# import tensorflow as tf
 import keras
 from keras.models import load_model
 from collections import deque
@@ -10,31 +10,48 @@ from collections import deque
 
 # Parameters
 num_slices = 3
-prbs_inf_init = 50
-max_prbs_inf = prbs_inf_init
-max_req_prbs = 10  # max total prbs a slice can require
+max_req_prbs = 22  # max total prbs a slice can require
 min_req_prbs = 0
-max_curr_prbs = 15
+max_curr_prbs = 22
 min_curr_prbs = 0
-max_allocate = 50
-min_allocate = -50
-num_episodes = 1000
-episode_length = 5
-training_freq = 20
+max_allocate = max_req_prbs - min_curr_prbs
+min_allocate = -max_allocate
+max_data_element = 22
+prbs_inf_init = round(50 / ((1/max_req_prbs)*max_data_element))
+max_prbs_inf = prbs_inf_init
+num_episodes = 2
+episode_length = 2
+training_freq = 2
 copying_freq = 30
 testing_iterations = 20
-test_frequency = 200
+test_frequency = 2
 initial_epsilon = 0.99
-final_epsilon = 0.01
+final_epsilon = 0.7
 # impossible_action_reward = -5
 build = True
 show_plots = True
 # names of the files from which to load the models and save the models to
-old_main_model = "test_30_3_m.h5"
-old_target_model = "test_30_3_t.h5"
-new_main_model = "test_30_3_m.h5"
-new_target_model = "test_30_3_t.h5"
+old_main_model = "test_31_2_m.h5"
+old_target_model = "test_31_2_t.h5"
+new_main_model = "test_31_del_m.h5"
+new_target_model = "test_31_del_t.h5"
 
+
+def convert_data_range(data):
+
+    num_bins = max_req_prbs + 1
+    # Calculate the thresholds for each bin
+    thresholds = np.linspace(-0.00001, max_data_element, num_bins)
+    thresholds = np.append(thresholds, np.inf)
+    # Initialize an array to store the converted data
+    converted_data = np.zeros_like(data, dtype=int)
+    # Assign values to each bin
+    for i in range(num_bins - 1):
+        converted_data[(data > thresholds[i]) & (data <= thresholds[i + 1])] = i + 1
+    converted_data[(data > thresholds[max_req_prbs])] = max_req_prbs
+
+
+    return converted_data
 
 class RicEnv:
     def __init__(self):
@@ -47,34 +64,38 @@ class RicEnv:
 
         # using the required prbs data from the real data
         excel_file_path = 'data/data_real_10_slices.xlsx'
-        data_frame = pd.read_excel(excel_file_path, skiprows=1, header=None)
+        data_frame = pd.read_excel(excel_file_path, skiprows=120, header=None)
         prbs_req_data_s1 = data_frame[2].values  # row C
-        prbs_req_data_s2 = data_frame[3].values  # row D
+        # prbs_req_data_s2 = data_frame[3].values  # row D
+        prbs_req_data_s2 = data_frame[9].values  # row J
         prbs_req_data_s3 = data_frame[6].values  # row G
-        self.prbs_req_s1 = np.round(np.array(prbs_req_data_s1)).astype(int)
-        self.prbs_req_s2 = np.round(np.array(prbs_req_data_s2)).astype(int)
-        self.prbs_req_s3 = np.round(np.array(prbs_req_data_s3)).astype(int)
+        # self.prbs_req_s1 = np.round(np.array(prbs_req_data_s1)).astype(int)
+        # self.prbs_req_s2 = np.round(np.array(prbs_req_data_s2)).astype(int)
+        # self.prbs_req_s3 = np.round(np.array(prbs_req_data_s3)).astype(int)
+        self.prbs_req_s1 = convert_data_range(prbs_req_data_s1)
+        self.prbs_req_s2 = convert_data_range(prbs_req_data_s2)
+        self.prbs_req_s3 = convert_data_range(prbs_req_data_s3)
         # generating required prbs from a cosine wave
         # sine_time_range = np.arange(0, 10, 0.5) # generating manually
         # self.prbs_req_data = np.rint((max_req_prbs / 2) * np.sin(sine_time_range) + max_req_prbs / 2)  # already changed to cosine
         # initializing the state
         self.time = 0
-        self.state = np.array([prbs_inf_init, random.randint(0, max_req_prbs), random.randint(0, max_req_prbs),
-                               random.randint(0, max_req_prbs), min_curr_prbs, min_curr_prbs, min_curr_prbs])
+        self.state = np.array([prbs_inf_init, random.randint(min_req_prbs, max_req_prbs), random.randint(min_req_prbs, max_req_prbs),
+                               random.randint(min_req_prbs, max_req_prbs), min_curr_prbs, min_curr_prbs, min_curr_prbs])
 
     def init_state(self):
         self.time = 0
-        self.state = np.array([prbs_inf_init, random.randint(0, max_req_prbs), random.randint(0, max_req_prbs),
-                               random.randint(0, max_req_prbs), min_curr_prbs, min_curr_prbs, min_curr_prbs])
+        self.state = np.array([prbs_inf_init, random.randint(min_req_prbs, max_req_prbs), random.randint(min_req_prbs, max_req_prbs),
+                               random.randint(min_req_prbs, max_req_prbs), min_curr_prbs, min_curr_prbs, min_curr_prbs])
 
     def calc_individual_reward(self, r, a):
         # r = number of pRBs slice requires
         # a = number of pRBs slice currently has
         if a == r:
-            individual_reward = 10
+            individual_reward = 11
         elif a > r:
-            individual_reward = 7 - (4 * (a - r))
-        elif a < 0:
+            individual_reward = 7 - (2 * (a - r))
+        elif a < min_curr_prbs:
             individual_reward = -15
         else:
             individual_reward = -5 - (2 * (r - a))
@@ -104,8 +125,8 @@ class RicEnv:
         # update the state (required prbs)
         if not testing:
             # during training, we generate the required prbs data randomly
-            self.state = np.array([new_prbs_inf, random.randint(0, max_req_prbs), random.randint(0, max_req_prbs),
-                               random.randint(0, max_req_prbs), new_curr_prbs_s1, new_curr_prbs_s2, new_curr_prbs_s3])
+            self.state = np.array([new_prbs_inf, random.randint(min_req_prbs, max_req_prbs), random.randint(min_req_prbs, max_req_prbs),
+                               random.randint(min_req_prbs, max_req_prbs), new_curr_prbs_s1, new_curr_prbs_s2, new_curr_prbs_s3])
         else:
             # during testing, we take the required prbs from the real data
             self.state = np.array([new_prbs_inf, self.prbs_req_s1[self.time], self.prbs_req_s2[self.time],
@@ -164,7 +185,6 @@ class RicEnv:
             prev_state[3] = round(prev_state[6] + oa3)
 
         # Calculate the reward for each slice
-        # e.g. if any of the slices are under allocated, 'under' will be flagged as true and total reward will be -5
         total_reward = 0
         individual_reward = 0
         for slice in range(1, num_slices + 1):
@@ -182,18 +202,18 @@ class RicEnv:
             elif new_prbs_inf > max_prbs_inf:
                 self.state[0] = max_prbs_inf
 
-            if new_curr_prbs_s1 < 0:
-                self.state[4] = 0
+            if new_curr_prbs_s1 < min_curr_prbs:
+                self.state[4] = min_curr_prbs
             elif new_curr_prbs_s1 > max_curr_prbs:
                 self.state[4] = max_curr_prbs
 
-            if new_curr_prbs_s2 < 0:
-                self.state[5] = 0
+            if new_curr_prbs_s2 < min_curr_prbs:
+                self.state[5] = min_curr_prbs
             elif new_curr_prbs_s2 > max_curr_prbs:
                 self.state[5] = max_curr_prbs
 
-            if new_curr_prbs_s3 < 0:
-                self.state[6] = 0
+            if new_curr_prbs_s3 < min_curr_prbs:
+                self.state[6] = min_curr_prbs
             elif new_curr_prbs_s3 > max_curr_prbs:
                 self.state[6] = max_curr_prbs
 
@@ -208,7 +228,7 @@ class RicEnv:
 
 class RicAgent:
     def build_net(self, state_shape, num_actions):
-        learning_rate = 0.1
+        learning_rate = 0.01
         optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
 
         model = keras.Sequential()
@@ -228,7 +248,7 @@ class RicAgent:
         if len(replay_memory) < MIN_REPLAY_SIZE:
             return
 
-        batch_size = 64
+        batch_size = 64 * 2
         mini_batch = random.sample(replay_memory, batch_size)
 
         # Collect observations from the mini-batch
@@ -286,7 +306,7 @@ def test(env, main_model):
     # initializing the environment
     env.time = 0
     env.state = np.array([prbs_inf_init, env.prbs_req_s1[env.time], env.prbs_req_s2[env.time],
-                           env.prbs_req_s3[env.time], 0, 0, 0])
+                           env.prbs_req_s3[env.time], min_curr_prbs, min_curr_prbs, min_curr_prbs])
 
     num_impossible_actions = 0
     num_under_allocations = 0
@@ -332,8 +352,23 @@ def test(env, main_model):
                 total_over_allocated += allocated - prev_req
             else:
                 num_correct_allocations += 1
+        new_prbs_inf = state[0] - action[0] - action[1] - action[2]
+        if new_prbs_inf < 0:
+            num_impossible_actions += 1
 
         state = next_state
+
+    # total_under_allocated = total_under_allocated * ((1/max_req_prbs)*max_data_element)
+    # total_over_allocated = total_over_allocated * ((1 / max_req_prbs) * max_data_element)
+
+    with open('logfile.txt', 'a') as f:
+        f.write("Number of Impossible Actions: " + str(num_impossible_actions) + "\n")
+        f.write("Number of Under-allocations: " + str(num_under_allocations) + "\n")
+        f.write("Number of Over-allocations: " + str(num_over_allocations) + "\n")
+        f.write("Number of Correct Allocations: " + str(num_correct_allocations) + "\n")
+        f.write("Total amount Under-allocated: " + str(total_under_allocated) + "\n")
+        f.write("Total amount Over-allocated: " + str(total_over_allocated) + "\n")
+        f.write("Cumulative Reward: " + str(cumulative_reward) + "\n\n")
 
     print("Number of Impossible Actions: ", num_impossible_actions)
     print("Number of Under-allocations: ", num_under_allocations)
@@ -399,6 +434,8 @@ def main():
     replay_memory = deque(maxlen=50_000)
     epsilon = initial_epsilon
     cumulative_rewards = []
+    with open('logfile.txt', 'w') as f:
+        f.write(".... " + "\n")
 
     # Training
     for episode in range(1, num_episodes + 1):
@@ -410,9 +447,7 @@ def main():
             print("Episode: ", episode, "Timestep: ", i)
             # select action (explore vs exploit)
             if random.uniform(0, 1) < epsilon:
-                # action = env.action_space.sample().index[0]
-                action = (random.randint(-max_req_prbs, max_req_prbs), random.randint(-max_req_prbs, max_req_prbs),
-                               random.randint(-max_req_prbs, max_req_prbs))
+                action = env.action_space.sample().index[0]
                 action_index = env.action_space_MI.get_loc(action)
             else:
                 predictions = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten() # Exploit learned values
@@ -436,19 +471,19 @@ def main():
             target_model.set_weights(main_model.get_weights())
 
         if episode % test_frequency == 0:
+            with open('logfile.txt', 'a') as f:
+                f.write("Episode: " + str(episode) + "\n")
             # Plot reward
             cumulative_reward = test(env, main_model)
             cumulative_rewards.append(cumulative_reward)
-            print(cumulative_rewards)
-            print(np.arange(test_frequency, episode + test_frequency, test_frequency))
             plot.plot(np.arange(test_frequency, episode + test_frequency, test_frequency), cumulative_rewards, marker='o')
             plot.title('Cumulative Reward')
             plot.grid(True)
             plot.savefig('Reward.jpg')
             plot.show()
             # Save model
-            main_model.save(new_main_model)
-            target_model.save(new_target_model)
+            # main_model.save(new_main_model)
+            # target_model.save(new_target_model)
 
 
 
