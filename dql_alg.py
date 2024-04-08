@@ -10,31 +10,31 @@ from collections import deque
 
 # Parameters
 num_slices = 3
-max_req_prbs = 22  # max total prbs a slice can require
-min_req_prbs = 0
-max_curr_prbs = 22
-min_curr_prbs = 0
+max_req_prbs = 3  # max total prbs a slice can require
+min_req_prbs = 1
+max_curr_prbs = 3
+min_curr_prbs = 1
 max_allocate = max_req_prbs - min_curr_prbs
 min_allocate = -max_allocate
 max_data_element = 22
 prbs_inf_init = round(50 / ((1/max_req_prbs)*max_data_element))
 max_prbs_inf = prbs_inf_init
-num_episodes = 2
-episode_length = 2
-training_freq = 2
+num_episodes = 50000
+episode_length = 10
+training_freq = 20
 copying_freq = 30
 testing_iterations = 20
-test_frequency = 2
+test_frequency = 300
 initial_epsilon = 0.99
 final_epsilon = 0.7
 # impossible_action_reward = -5
 build = True
 show_plots = True
 # names of the files from which to load the models and save the models to
-old_main_model = "test_31_2_m.h5"
-old_target_model = "test_31_2_t.h5"
-new_main_model = "test_31_del_m.h5"
-new_target_model = "test_31_del_t.h5"
+old_main_model = "test_33_8_m.h5"
+old_target_model = "test_33_8_t.h5"
+new_main_model = "test_32_3_m.h5"
+new_target_model = "test_32_3_t.h5"
 
 
 def convert_data_range(data):
@@ -379,38 +379,86 @@ def test(env, main_model):
     print("Cumulative Reward: ", cumulative_reward)
 
     if show_plots:
+        min_y_axis = int(min(min(env.prbs_req_s1[:testing_iterations]), min(s1_record),
+                             min(env.prbs_req_s2[:testing_iterations]), min(s2_record),
+                             min(env.prbs_req_s3[:testing_iterations]), min(s3_record)))
+        max_y_axis = int(max(max(env.prbs_req_s1[:testing_iterations]), max(s1_record),
+                             max(env.prbs_req_s2[:testing_iterations]), max(s2_record),
+                             max(env.prbs_req_s3[:testing_iterations]), max(s3_record)))
+
         plot.plot(np.arange(0, testing_iterations), env.prbs_req_s1[:testing_iterations], marker='o', label='Required')
         plot.plot(np.arange(0, testing_iterations), s1_record, marker='x', label='Allocated')
-        plot.title('Slice 1')
+        plot.title('Slice 1', fontsize=18)
         plot.grid(True)
-        # plot.xticks(np.arange(0, testing_iterations, 4))
-        # plot.yticks(np.arange(int(min(min(env.prbs_req_s1[:testing_iterations]), min(s1_record))),
-        #                      int(max(max(env.prbs_req_s1[:testing_iterations]), max(s1_record))) + 1, 4))
-        plot.legend()
+        plot.xticks(np.arange(0, testing_iterations, 2), fontsize=16)
+        # plot.ylim(min_y_axis-0.1, max_y_axis+0.1)
+        plot.yticks(np.arange(int(min(min(env.prbs_req_s1[:testing_iterations]), min(s1_record))),
+                              int(max(max(env.prbs_req_s1[:testing_iterations]), max(s1_record))) + 1, 1))
+        plot.ylim(int(min(min(env.prbs_req_s1[:testing_iterations]), min(s1_record))) - 0.1,
+                  int(max(max(env.prbs_req_s1[:testing_iterations]), max(s1_record))) + 0.1)
+        plot.yticks(fontsize=16)
+        plot.xlabel("Timestep", fontsize=18)
+        plot.ylabel("Number of pRBs", fontsize=18)
+        plot.legend(fontsize=16)
+        plot.tight_layout()
         plot.savefig('Slice_1.jpg')
         plot.show()
+        plot.clf()
 
         plot.plot(np.arange(0, testing_iterations), env.prbs_req_s2[:testing_iterations], marker='o', label='Required')
         plot.plot(np.arange(0, testing_iterations), s2_record, marker='x', label='Allocated')
-        plot.title('Slice 2')
+        plot.title('Slice 2', fontsize=18)
         plot.grid(True)
-        # plot.xticks(np.arange(0, testing_iterations, 4))
-        # plot.yticks(np.arange(int(min(min(env.prbs_req_s2[:testing_iterations]), min(s2_record))),
-        #                       int(max(max(env.prbs_req_s2[:testing_iterations]), max(s2_record))) + 1, 4))
-        plot.legend()
+        plot.xticks(np.arange(0, testing_iterations, 2), fontsize=16)
+        # plot.ylim(min_y_axis - 0.1, max_y_axis + 0.1)
+        plot.yticks(np.arange(int(min(min(env.prbs_req_s2[:testing_iterations]), min(s2_record))),
+                              int(max(max(env.prbs_req_s2[:testing_iterations]), max(s2_record))) + 1, 1))
+        plot.ylim(int(min(min(env.prbs_req_s2[:testing_iterations]), min(s2_record))) - 0.1,
+                  int(max(max(env.prbs_req_s2[:testing_iterations]), max(s2_record))) + 0.1)
+        plot.yticks(fontsize=16)
+        plot.xlabel("Timestep", fontsize=18)
+        plot.ylabel("Number of pRBs", fontsize=18)
+        plot.legend(fontsize=16)
+        plot.tight_layout()
         plot.savefig('Slice_2.jpg')
         plot.show()
+        plot.clf()
 
         plot.plot(np.arange(0, testing_iterations), env.prbs_req_s3[:testing_iterations], marker='o', label='Required')
         plot.plot(np.arange(0, testing_iterations), s3_record, marker='x', label='Allocated')
-        plot.title('Slice 3')
+        plot.title('Slice 3', fontsize=18)
         plot.grid(True)
-        # plot.xticks(np.arange(0, testing_iterations, 4))
-        # plot.yticks(np.arange(int(min(min(env.prbs_req_s3[:testing_iterations]), min(s3_record))),
-        #                       int(max(max(env.prbs_req_s3[:testing_iterations]), max(s3_record))) + 1, 4))
-        plot.legend()
+        plot.xticks(np.arange(0, testing_iterations, 2), fontsize=16)
+        # plot.ylim(min_y_axis - 0.1, max_y_axis + 0.1)
+        plot.yticks(np.arange(int(min(min(env.prbs_req_s3[:testing_iterations]), min(s3_record))),
+                              int(max(max(env.prbs_req_s3[:testing_iterations]), max(s3_record))) + 1, 1))
+        plot.ylim(int(min(min(env.prbs_req_s3[:testing_iterations]), min(s3_record))) - 0.1,
+                        int(max(max(env.prbs_req_s3[:testing_iterations]), max(s3_record))) + 0.1)
+        plot.yticks(fontsize=16)
+        plot.xlabel("Timestep", fontsize=18)
+        plot.ylabel("Number of pRBs", fontsize=18)
+        plot.legend(fontsize=16)
+        plot.tight_layout()
         plot.savefig('Slice_3.jpg')
         plot.show()
+        plot.clf()
+
+        plot.plot(np.arange(0, testing_iterations), s1_record, marker='x', label='Slice 1')
+        plot.plot(np.arange(0, testing_iterations), s2_record, marker='s', label='Slice 2')
+        plot.plot(np.arange(0, testing_iterations), s3_record, marker='p', label='Slice 3')
+        plot.title('All Slices', fontsize=18)
+        plot.grid(True)
+        plot.xticks(np.arange(0, testing_iterations, 2), fontsize=16)
+        plot.yticks(np.arange(min_y_axis, max_y_axis + 1, 1))
+        plot.ylim(min_y_axis - 0.1, max_y_axis + 0.1)
+        plot.yticks(fontsize=16)
+        plot.xlabel("Timestep", fontsize=18)
+        plot.ylabel("Number of pRBs Allocated", fontsize=18)
+        plot.legend(fontsize=16)
+        plot.tight_layout()
+        plot.savefig('Slice_All.jpg')
+        plot.show()
+        plot.clf()
 
     return cumulative_reward
 
@@ -481,6 +529,7 @@ def main():
             plot.grid(True)
             plot.savefig('Reward.jpg')
             plot.show()
+            plot.clf()
             # Save model
             # main_model.save(new_main_model)
             # target_model.save(new_target_model)
@@ -489,7 +538,7 @@ def main():
 
     # Testing
     # test_other_inputs(env, main_model, target_model)  # test on hardcoded inputs
-    # test(env, main_model)  # test on real data
+    delete = test(env, main_model)  # test on real data
 
 if __name__ == "__main__":
     main()
