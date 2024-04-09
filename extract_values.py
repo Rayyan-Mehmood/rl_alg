@@ -1,8 +1,8 @@
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plot
 import os
 
 # Define the file name
-file_name = 't32_3_logfile.txt'
+file_name = 't39_2_logfile.txt'
 
 # Function to extract data from a file
 def extract_data(file_name):
@@ -12,7 +12,7 @@ def extract_data(file_name):
     with open(file_name, 'r') as file:
         lines = file.readlines()
         for i, line in enumerate(lines):
-            if i % 10 == 0:  # Extract every 10th instance
+            if i % 2 == 0:  # Extract every 10th instance
                 if line.startswith('Episode:'):
                     episode_number = int(line.split(':')[1].strip())
                     episode_numbers.append(episode_number)
@@ -32,11 +32,20 @@ max_length = max(len(episode_numbers), len(cumulative_rewards))
 episode_numbers += [None] * (max_length - len(episode_numbers))
 cumulative_rewards += [None] * (max_length - len(cumulative_rewards))
 
-# Plot reward versus episode curve
-plt.plot(episode_numbers, cumulative_rewards)
-plt.xlabel('Episode')
-plt.ylabel('Cumulative Reward')
-plt.title(os.path.basename(file_name))
+# Convert episode numbers to thousands
+episode_numbers = [episode / 1000 if episode is not None else None for episode in episode_numbers]
 
-# Show plot
-plt.show()
+
+# Plot reward versus episode curve
+plot.plot(episode_numbers, cumulative_rewards)
+plot.title('Reward Curve', fontsize=18)
+plot.grid(True)
+plot.xticks(fontsize=16)
+plot.yticks(fontsize=16)
+plot.xlabel("Episode ($\\times 10^3$)", fontsize=18)
+plot.ylabel("Cumulative Reward", fontsize=18)
+plot.legend(fontsize=16)
+plot.tight_layout()
+plot.savefig('t32_3_reward.jpg')
+plot.show()
+plot.clf()
