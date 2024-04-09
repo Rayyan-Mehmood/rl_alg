@@ -2,6 +2,7 @@ import numpy as np
 import random
 import pandas as pd
 import matplotlib.pyplot as plot
+import time
 
 num_slices = 3
 max_req_prbs = 3  # max total prbs a slice can require
@@ -376,8 +377,17 @@ def main():
     gamma = 0.00001
     epsilon = 0.9999
 
+    start_time = time.time()
+    reached_1000 = False
+    reached_2000 = False
+    reached_3000 = False
+    reached_4000 = False
+    reached_5000 = False
+    reached_6000 = False
+    reached_7000 = False
+
     cumulative_rewards = []
-    with open('logfile_ql.txt', 'w') as f:
+    with open('logfile.txt', 'w') as f:
         f.write(".... " + "\n")
 
     # Training
@@ -410,6 +420,48 @@ def main():
             # Plot reward
             cumulative_reward = test(env)
             cumulative_rewards.append(cumulative_reward)
+            if cumulative_reward >= 1000 and not reached_1000:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 1000 Reward: " + str(total_time) + "\n\n")
+                reached_1000 = True
+            elif cumulative_reward >= 2000 and not reached_2000:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 2000 Reward: " + str(total_time) + "\n\n")
+                reached_2000 = True
+            elif cumulative_reward >= 3000 and not reached_3000:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 3000 Reward: " + str(total_time) + "\n\n")
+                reached_3000 = True
+            elif cumulative_reward >= 4000 and not reached_4000:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 4000 Reward: " + str(total_time) + "\n\n")
+                reached_4000 = True
+            elif cumulative_reward >= 5000 and not reached_5000:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 5000 Reward: " + str(total_time) + "\n\n")
+                reached_5000 = True
+            elif cumulative_reward >= 6000 and not reached_6000:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 6000 Reward: " + str(total_time) + "\n\n")
+                reached_6000 = True
+            elif cumulative_reward >= 7000 and not reached_7000:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 7000 Reward: " + str(total_time) + "\n\n")
+                reached_7000 = True
             plot.plot(np.arange(test_frequency, episode + test_frequency, test_frequency), cumulative_rewards, marker='o')
             plot.title('Cumulative Reward')
             plot.grid(True)
