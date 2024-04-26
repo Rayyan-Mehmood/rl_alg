@@ -4,22 +4,28 @@ import pandas as pd
 import matplotlib.pyplot as plot
 import time
 
+# Parameters
+discretize = True  # if you want to discretize the data
 num_slices = 3
-max_req_prbs = 3  # max total prbs a slice can require
+max_req_prbs = 3  # max prbs a slice can require
 min_req_prbs = 1
-max_curr_prbs = 3
+max_curr_prbs = 3  # max prbs a slice can have
 min_curr_prbs = 1
-max_allocate = max_req_prbs - min_curr_prbs
+max_allocate = max_req_prbs - min_curr_prbs  # max prbs agent can allocate
 min_allocate = -max_allocate
-max_data_element = 22
-prbs_inf_init = round(50 / ((1/max_req_prbs)*max_data_element))
+max_data_element = 22  # max data element in the part of the dataset we're using
+if not discretize:
+    prbs_inf_init = 50  # number of prbs in the infrastructure provider at the start
+else:
+    prbs_inf_init = round(50 / ((1/max_req_prbs)*max_data_element))
 max_prbs_inf = prbs_inf_init
-num_episodes = 100
+num_episodes = 100  # number of training episodes
 episode_length = 10
-testing_iterations = 20
-test_frequency = 50
-show_plots = True
+testing_iterations = 20  # number of rows of data used for testing
+test_frequency = 2  # number of episodes after which the DQN is tested on the real data
+show_plots = True  # create the graphs when running the test function
 
+# this function discretizes the test data to the range of 1 to max_req_prbs
 def convert_data_range(data):
 
     num_bins = max_req_prbs + 1
@@ -36,40 +42,41 @@ def convert_data_range(data):
 
     return converted_data
 
+# Environment
 class RicEnv():
+    # this function creates the action space and state space, loads the real data and creates the initial q-table
     def __init__(self):
-        # Here, the bounds are inclusive
-        # action = [allocate_prbs_s1, allocate_prbs_s2]
         action1_space = np.arange(min_allocate, max_allocate + 1)
         action2_space = np.arange(min_allocate, max_allocate + 1)
         action3_space = np.arange(min_allocate, max_allocate + 1)
         self.action_space_MI = pd.MultiIndex.from_product([action1_space, action2_space, action3_space])
         self.action_space = pd.DataFrame(index=self.action_space_MI, columns=['Value'])
 
-        # state = [prbs_inf, req_prbs_s1, req_prbs_s2, curr_prbs_s1, curr_prbs_s2]
-        # self.episode_length = np.arange(0, 10, 0.5)
-        # self.prbs_req_data = np.rint((max_req_prbs / 2) * np.sin(episode_length) + max_req_prbs / 2)
-        # self.prbs_req_data = np.genfromtxt('data_sin.csv', delimiter=',')
+        # using the required prbs data from the real data
         excel_file_path = 'data/data_real_10_slices.xlsx'
         data_frame = pd.read_excel(excel_file_path, skiprows=120, header=None)
-        prbs_req_data_s1 = data_frame[2].values  # row C
-        prbs_req_data_s2 = data_frame[9].values  # row J
-        prbs_req_data_s3 = data_frame[6].values  # row G
-        # self.prbs_req_s1 = np.round(np.array(prbs_req_data_s1)).astype(int)
-        # self.prbs_req_s2 = np.round(np.array(prbs_req_data_s2)).astype(int)
-        # self.prbs_req_s3 = np.round(np.array(prbs_req_data_s3)).astype(int)
-        self.prbs_req_s1 = convert_data_range(prbs_req_data_s1)
-        self.prbs_req_s2 = convert_data_range(prbs_req_data_s2)
-        self.prbs_req_s3 = convert_data_range(prbs_req_data_s3)
-        self.init_state()
+        prbs_req_data_s1 = data_frame[2].values  # column C
+        prbs_req_data_s2 = data_frame[9].values  # column J
+        prbs_req_data_s3 = data_frame[6].values  # column G
+        if not discretize:
+            self.prbs_req_s1 = np.round(np.array(prbs_req_data_s1)).astype(int)
+            self.prbs_req_s2 = np.round(np.array(prbs_req_data_s2)).astype(int)
+            self.prbs_req_s3 = np.round(np.array(prbs_req_data_s3)).astype(int)
+        else:
+            self.prbs_req_s1 = convert_data_range(prbs_req_data_s1)
+            self.prbs_req_s2 = convert_data_range(prbs_req_data_s2)
+            self.prbs_req_s3 = convert_data_range(prbs_req_data_s3)
 
+        self.init_state()
         self.q_table = pd.DataFrame(columns=self.action_space_MI, dtype=np.float64)
 
+    # this function initializes the state
     def init_state(self):
         self.time = 0
         self.state = np.array([prbs_inf_init, random.randint(min_req_prbs, max_req_prbs), random.randint(min_req_prbs, max_req_prbs),
                                random.randint(min_req_prbs, max_req_prbs), min_curr_prbs, min_curr_prbs, min_curr_prbs])
 
+    # this function calculates the reward for each slice
     def calc_individual_reward(self, r, a):
         if a == r:
             individual_reward = 120
@@ -80,11 +87,13 @@ class RicEnv():
 
         return individual_reward
 
+    # check if a state exists in the q-table. If not, add it to the q-table
     def check_state_exist(self, state):
         if state not in self.q_table.index:
             new_row = pd.Series([0] * len(self.action_space), index=self.q_table.columns, name=state)
             self.q_table.loc[state] = new_row
 
+    # this function moves the environment forward by one timestep
     def step(self, action, testing=False, bounded=True):
         # save the current state
         prev_state = list(self.state)
@@ -202,14 +211,14 @@ class RicEnv():
         truncated = False
         return tuple(self.state), reward, done, truncated, info
 
+# this function tests the agent using the test data
 def test(env):
-    # load q-table
-    # env.q_table = pd.read_pickle('q_table_train.pkl')
     # initializing the environment
     env.time = 0
     env.state = np.array([prbs_inf_init, env.prbs_req_s1[env.time], env.prbs_req_s2[env.time],
                           env.prbs_req_s3[env.time], min_curr_prbs, min_curr_prbs, min_curr_prbs])
 
+    # initialize the different metrics
     num_impossible_actions = 0
     num_under_allocations = 0
     num_over_allocations = 0
@@ -217,24 +226,24 @@ def test(env):
     total_under_allocated = 0
     total_over_allocated = 0
     cumulative_reward = 0
+    # record the number of prbs each slice has at each timestep so we can plot them
     s1_record = np.zeros(testing_iterations)
     s2_record = np.zeros(testing_iterations)
     s3_record = np.zeros(testing_iterations)
 
-    # print("State \t \t Action \t \t Q-value")
-    for i in range(0, testing_iterations):  # upper bound is exclusive
+    # start testing
+    for i in range(0, testing_iterations):
         state = tuple(env.state)
-        print(state)
         # select action (exploit)
         env.check_state_exist(str(state))
         action = env.q_table.loc[str(state)].idxmax()  # Exploit learned values
         q_value = env.q_table.loc[str(state)].max()
         print(i, ": State: ", env.state, "\t Action: ", action, "\t Q-value: ", q_value)
-        # print(' '.join(map(str, env.state)), ' '.join(map(str, action)), q_value)
+
         # move 1 step forward
         next_state, reward, done, truncated, info = env.step(action, True, True)
 
-        # Test metrics
+        # update the test metrics
         cumulative_reward += reward
         s1_record[i] = next_state[4]
         s2_record[i] = next_state[5]
@@ -261,9 +270,7 @@ def test(env):
 
         state = next_state
 
-    # total_under_allocated = total_under_allocated * ((1/max_req_prbs)*max_data_element)
-    # total_over_allocated = total_over_allocated * ((1 / max_req_prbs) * max_data_element)
-
+    # print out the test results to the log file
     with open('logfile.txt', 'a') as f:
         f.write("Number of Impossible Actions: " + str(num_impossible_actions) + "\n")
         f.write("Number of Under-allocations: " + str(num_under_allocations) + "\n")
@@ -273,6 +280,7 @@ def test(env):
         f.write("Total amount Over-allocated: " + str(total_over_allocated) + "\n")
         f.write("Cumulative Reward: " + str(cumulative_reward) + "\n\n")
 
+    # print out the test results to the terminal
     print("Number of Impossible Actions: ", num_impossible_actions)
     print("Number of Under-allocations: ", num_under_allocations)
     print("Number of Over-allocations: ", num_over_allocations)
@@ -281,6 +289,7 @@ def test(env):
     print("Total amount Over-allocated: ", total_over_allocated)
     print("Cumulative Reward: ", cumulative_reward)
 
+    # create the graphs
     if show_plots:
         min_y_axis = int(min(min(env.prbs_req_s1[:testing_iterations]), min(s1_record),
                              min(env.prbs_req_s2[:testing_iterations]), min(s2_record),
@@ -289,6 +298,7 @@ def test(env):
                              max(env.prbs_req_s2[:testing_iterations]), max(s2_record),
                              max(env.prbs_req_s3[:testing_iterations]), max(s3_record)))
 
+        # plot 'Required vs Allocated pRBs for Slice 1'
         plot.plot(np.arange(0, testing_iterations), env.prbs_req_s1[:testing_iterations], marker='o', label='Required')
         plot.plot(np.arange(0, testing_iterations), s1_record, marker='x', label='Allocated')
         plot.title('Slice 1', fontsize=18)
@@ -305,9 +315,10 @@ def test(env):
         plot.legend(fontsize=16)
         plot.tight_layout()
         plot.savefig('Slice_1.jpg')
-        plot.show()
+        # plot.show()
         plot.clf()
 
+        # plot 'Required vs Allocated pRBs for Slice 2'
         plot.plot(np.arange(0, testing_iterations), env.prbs_req_s2[:testing_iterations], marker='o', label='Required')
         plot.plot(np.arange(0, testing_iterations), s2_record, marker='x', label='Allocated')
         plot.title('Slice 2', fontsize=18)
@@ -324,9 +335,10 @@ def test(env):
         plot.legend(fontsize=16)
         plot.tight_layout()
         plot.savefig('Slice_2.jpg')
-        plot.show()
+        # plot.show()
         plot.clf()
 
+        # plot 'Required vs Allocated pRBs for Slice 3'
         plot.plot(np.arange(0, testing_iterations), env.prbs_req_s3[:testing_iterations], marker='o', label='Required')
         plot.plot(np.arange(0, testing_iterations), s3_record, marker='x', label='Allocated')
         plot.title('Slice 3', fontsize=18)
@@ -343,9 +355,10 @@ def test(env):
         plot.legend(fontsize=16)
         plot.tight_layout()
         plot.savefig('Slice_3.jpg')
-        plot.show()
+        # plot.show()
         plot.clf()
 
+        # plot 'Allocated pRBs for each slice'
         plot.plot(np.arange(0, testing_iterations), s1_record, marker='x', label='Slice 1')
         plot.plot(np.arange(0, testing_iterations), s2_record, marker='s', label='Slice 2')
         plot.plot(np.arange(0, testing_iterations), s3_record, marker='p', label='Slice 3')
@@ -360,11 +373,9 @@ def test(env):
         plot.legend(fontsize=16)
         plot.tight_layout()
         plot.savefig('Slice_All.jpg')
-        plot.show()
+        # plot.show()
         plot.clf()
 
-    # env.q_table.to_csv('q_table_test.csv')
-    # env.q_table.to_pickle('q_table_test.pkl')
     return cumulative_reward
 
 def main():
@@ -377,6 +388,7 @@ def main():
     gamma = 0.00001
     epsilon = 0.9999
 
+    # used for measuring the time it takes to reach a reward of 1000, 2000, etc.
     start_time = time.time()
     reached_1000 = False
     reached_2000 = False
@@ -392,6 +404,7 @@ def main():
 
     # Training
     for episode in range(1, num_episodes+1):
+        # initialize the state
         env.init_state()
         state = tuple(env.state)
         for i in range(1, episode_length+1):
@@ -414,12 +427,15 @@ def main():
             # update state
             state = next_state
 
+        # test the agent
         if episode % test_frequency == 0:
             with open('logfile.txt', 'a') as f:
                 f.write("Episode: " + str(episode) + "\n")
-            # Plot reward
+
+            # plot reward
             cumulative_reward = test(env)
             cumulative_rewards.append(cumulative_reward)
+            # measure the time it takes to reach a target cumulative reward
             if cumulative_reward >= 1000 and not reached_1000:
                 end_time = time.time()
                 total_time = end_time - start_time
@@ -466,14 +482,8 @@ def main():
             plot.title('Cumulative Reward')
             plot.grid(True)
             plot.savefig('Reward.jpg')
-            plot.show()
+            # plot.show()
             plot.clf()
-            # Save model
-            # env.q_table.to_csv('Test_23_train.csv')
-            # env.q_table.to_pickle('Test_23_train.pkl')
-
-    # Testing
-    # test(env)
 
 
 if __name__ == "__main__":
