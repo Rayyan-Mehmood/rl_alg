@@ -9,34 +9,38 @@ from collections import deque
 
 
 # Parameters
+discretize = True  # if you want to discretize the data
 num_slices = 3
-max_req_prbs = 3  # max total prbs a slice can require
+max_req_prbs = 3  # max prbs a slice can require
 min_req_prbs = 1
-max_curr_prbs = 3
+max_curr_prbs = 3  # max prbs a slice can have
 min_curr_prbs = 1
-max_allocate = max_req_prbs - min_curr_prbs
+max_allocate = max_req_prbs - min_curr_prbs  # max prbs agent can allocate
 min_allocate = -max_allocate
 max_data_element = 22
-prbs_inf_init = round(50 / ((1/max_req_prbs)*max_data_element))
+if not discretize:
+    prbs_inf_init = 50  # number of prbs in the infrastructure provider at the start
+else:
+    prbs_inf_init = round(50 / ((1/max_req_prbs)*max_data_element))
 max_prbs_inf = prbs_inf_init
-num_episodes = 50000
+num_episodes = 50000  # number of training episodes
 episode_length = 10
-training_freq = 20
-copying_freq = 30
-testing_iterations = 20
-test_frequency = 300
-initial_epsilon = 0.99
+training_freq = 20  # number of episodes after which the main network is trained
+copying_freq = 30  # number of episodes after which the weights are copied to the target network
+testing_iterations = 20  # number of rows of data used for testing
+test_frequency = 300  # number of episodes after which the DQN is tested on the real data
+initial_epsilon = 0.99  # epsilon is the exploration rate
 final_epsilon = 0.7
 # impossible_action_reward = -5
-build = True
-show_plots = True
+build = True  # build the NN model from scratch or load in an existing model
+show_plots = True  # create the graphs when running the test function
 # names of the files from which to load the models and save the models to
-old_main_model = "test_33_8_m.h5"
-old_target_model = "test_33_8_t.h5"
-new_main_model = "test_32_3_m.h5"
-new_target_model = "test_32_3_t.h5"
+old_main_model = "test_32_3_m.h5"
+old_target_model = "test_32_3_t.h5"
+new_main_model = "test_40_m.h5"
+new_target_model = "test_40_t.h5"
 
-
+# this function discretizes the test data to the range of 1 to max_req_prbs
 def convert_data_range(data):
 
     num_bins = max_req_prbs + 1
@@ -53,7 +57,9 @@ def convert_data_range(data):
 
     return converted_data
 
+# Environment
 class RicEnv:
+    # this function creates the action space and state space and loads the real data
     def __init__(self):
         # Encoding the action space as a Multi-Index array of tuples
         action1_space = np.arange(min_allocate, max_allocate + 1)
@@ -65,29 +71,30 @@ class RicEnv:
         # using the required prbs data from the real data
         excel_file_path = 'data/data_real_10_slices.xlsx'
         data_frame = pd.read_excel(excel_file_path, skiprows=120, header=None)
-        prbs_req_data_s1 = data_frame[2].values  # row C
-        # prbs_req_data_s2 = data_frame[3].values  # row D
-        prbs_req_data_s2 = data_frame[9].values  # row J
-        prbs_req_data_s3 = data_frame[6].values  # row G
-        # self.prbs_req_s1 = np.round(np.array(prbs_req_data_s1)).astype(int)
-        # self.prbs_req_s2 = np.round(np.array(prbs_req_data_s2)).astype(int)
-        # self.prbs_req_s3 = np.round(np.array(prbs_req_data_s3)).astype(int)
-        self.prbs_req_s1 = convert_data_range(prbs_req_data_s1)
-        self.prbs_req_s2 = convert_data_range(prbs_req_data_s2)
-        self.prbs_req_s3 = convert_data_range(prbs_req_data_s3)
-        # generating required prbs from a cosine wave
-        # sine_time_range = np.arange(0, 10, 0.5) # generating manually
-        # self.prbs_req_data = np.rint((max_req_prbs / 2) * np.sin(sine_time_range) + max_req_prbs / 2)  # already changed to cosine
+        prbs_req_data_s1 = data_frame[2].values  # column C of the excel file
+        prbs_req_data_s2 = data_frame[9].values  # column J of the excel file
+        prbs_req_data_s3 = data_frame[6].values  # column G of the excel file
+        if not discretize:
+            self.prbs_req_s1 = np.round(np.array(prbs_req_data_s1)).astype(int)
+            self.prbs_req_s2 = np.round(np.array(prbs_req_data_s2)).astype(int)
+            self.prbs_req_s3 = np.round(np.array(prbs_req_data_s3)).astype(int)
+        else:
+            self.prbs_req_s1 = convert_data_range(prbs_req_data_s1)
+            self.prbs_req_s2 = convert_data_range(prbs_req_data_s2)
+            self.prbs_req_s3 = convert_data_range(prbs_req_data_s3)
+
         # initializing the state
         self.time = 0
         self.state = np.array([prbs_inf_init, random.randint(min_req_prbs, max_req_prbs), random.randint(min_req_prbs, max_req_prbs),
                                random.randint(min_req_prbs, max_req_prbs), min_curr_prbs, min_curr_prbs, min_curr_prbs])
 
+    # this function initializes the state
     def init_state(self):
         self.time = 0
         self.state = np.array([prbs_inf_init, random.randint(min_req_prbs, max_req_prbs), random.randint(min_req_prbs, max_req_prbs),
                                random.randint(min_req_prbs, max_req_prbs), min_curr_prbs, min_curr_prbs, min_curr_prbs])
 
+    # this function calculates the reward for each slice
     def calc_individual_reward(self, r, a):
         # r = number of pRBs slice requires
         # a = number of pRBs slice currently has
@@ -102,10 +109,11 @@ class RicEnv:
 
         return individual_reward
 
-    # testing is true when we are testing the model
-    # bounded is true when we want to bound the state space during training so that the agent never explores
-    # out-of-bounds states during training
+    # this function moves the environment forward by one timestep
     def step(self, action, testing=False, bounded=True):
+        # testing is true when we are testing the model
+        # bounded is true when we want to bound the state space during training so that the agent never explores
+        # out-of-bounds states during training
         # save the current state
         prev_state = list(self.state)
         prbs_inf = prev_state[0]
@@ -226,7 +234,9 @@ class RicEnv:
         truncated = False
         return tuple(self.state), reward, done, truncated, info
 
+# Agent
 class RicAgent:
+    # this function creates the neural net
     def build_net(self, state_shape, num_actions):
         learning_rate = 0.01
         optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
@@ -240,6 +250,7 @@ class RicAgent:
         # model.summary()
         return model
 
+    # this function trains the neural net
     def train(self, replay_memory, model, target_model):
         alpha = 0.4
         discount_factor = 0.2
@@ -248,16 +259,18 @@ class RicAgent:
         if len(replay_memory) < MIN_REPLAY_SIZE:
             return
 
+        # create a mini-batch
         batch_size = 64 * 2
         mini_batch = random.sample(replay_memory, batch_size)
 
-        # Collect observations from the mini-batch
+        # collect observations from the mini-batch
         current_states = np.array([transition[0] for transition in mini_batch])
-        # Predict Q-values for the entire batch
+        # predict Q-values for the entire batch
         current_qs_list = model.predict(current_states)
         next_states = np.array([transition[3] for transition in mini_batch])
         next_qs_list = target_model.predict(next_states)
 
+        # calculate the updated q-value
         X = []
         Y = []
         for index, (observation, action, reward, new_observation, done) in enumerate(mini_batch):
@@ -271,43 +284,14 @@ class RicAgent:
         model.fit(np.array(X), np.array(Y), batch_size=batch_size, verbose=0, shuffle=True)
 
 
-# Testing with hardcoded inputs
-def test_other_inputs(env, main_model, target_model):
-    def print_testcase(env, main_model, state, target_model):
-        env.state = state
-        print("State: ", env.state)
-        predictions = main_model.predict(env.state.reshape([1, env.state.shape[0]])).flatten()
-        action = env.action_space_MI[np.argmax(predictions)]
-        q_value = np.max(predictions)
-        print("Action: ", action)
-        print("Main Model Q-value: ", q_value)
-        # print("Predictions:")
-        # for i in range(0, len(predictions), 5):
-        #     print(predictions[i:i + 5])
-
-    # Testing other inputs
-    print("TESTING OTHER INPUTS")
-
-    print_testcase(env, main_model, np.array([50, 0, 0, 0, 0, 0, 0]), target_model)
-    print_testcase(env, main_model, np.array([14, 1, 3, 1, 0, 0, 1]), target_model)
-    print_testcase(env, main_model, np.array([13, 0, 2, 0, 0, 0, 2]), target_model)
-    print_testcase(env, main_model, np.array([12, 1, 1, 0, 0, 1, 2]), target_model)
-    print_testcase(env, main_model, np.array([12, 3, 0, 1, 1, 1, 1]), target_model)
-    print_testcase(env, main_model, np.array([11, 1, 0, 0, 1, 0, 3]), target_model)
-    print_testcase(env, main_model, np.array([9, 0, 3, 0, 3, 0, 3]), target_model)
-    print_testcase(env, main_model, np.array([8, 0, 0, 0, 1, 3, 3]), target_model)
-    print_testcase(env, main_model, np.array([7, 3, 3, 3, 3, 2, 3]), target_model)
-    print_testcase(env, main_model, np.array([6, 0, 1, 2, 3, 3, 3]), target_model)
-
-
-# Testing with the real data
+# this function tests the DQN using the test data
 def test(env, main_model):
-    # Testing
     # initializing the environment
     env.time = 0
     env.state = np.array([prbs_inf_init, env.prbs_req_s1[env.time], env.prbs_req_s2[env.time],
                            env.prbs_req_s3[env.time], min_curr_prbs, min_curr_prbs, min_curr_prbs])
 
+    # initialize the different metrics
     num_impossible_actions = 0
     num_under_allocations = 0
     num_over_allocations = 0
@@ -315,23 +299,24 @@ def test(env, main_model):
     total_under_allocated = 0
     total_over_allocated = 0
     cumulative_reward = 0
+    # record the number of prbs each slice has at each timestep so we can plot them
     s1_record = np.zeros(testing_iterations)
     s2_record = np.zeros(testing_iterations)
     s3_record = np.zeros(testing_iterations)
 
-    # print("State \t \t Action \t \t Q-value")
-    for i in range(0, testing_iterations):  # upper bound is exclusive
+    # start testing
+    for i in range(0, testing_iterations):
         state = tuple(env.state)
         # select action (exploit)
         predictions = main_model.predict(env.state.reshape([1, env.state.shape[0]]), verbose=0).flatten()  # Exploit learned values
         action = env.action_space_MI[np.argmax(predictions)]
         q_value = np.max(predictions)
         print(i, ": State: ", env.state, "\t Action: ", action, "\t Q-value: ", q_value)
-        # print(' '.join(map(str, env.state)), ' '.join(map(str, action)), q_value)
+
         # move 1 step forward
         next_state, reward, done, truncated, info = env.step(action, True, True)
 
-        # Test metrics
+        # update the test metrics
         cumulative_reward += reward
         s1_record[i] = next_state[4]
         s2_record[i] = next_state[5]
@@ -356,11 +341,10 @@ def test(env, main_model):
         if new_prbs_inf < 0:
             num_impossible_actions += 1
 
+        # update the state
         state = next_state
 
-    # total_under_allocated = total_under_allocated * ((1/max_req_prbs)*max_data_element)
-    # total_over_allocated = total_over_allocated * ((1 / max_req_prbs) * max_data_element)
-
+    # print out the test results to the log file
     with open('logfile.txt', 'a') as f:
         f.write("Number of Impossible Actions: " + str(num_impossible_actions) + "\n")
         f.write("Number of Under-allocations: " + str(num_under_allocations) + "\n")
@@ -370,6 +354,7 @@ def test(env, main_model):
         f.write("Total amount Over-allocated: " + str(total_over_allocated) + "\n")
         f.write("Cumulative Reward: " + str(cumulative_reward) + "\n\n")
 
+    # print out the test results to the terminal
     print("Number of Impossible Actions: ", num_impossible_actions)
     print("Number of Under-allocations: ", num_under_allocations)
     print("Number of Over-allocations: ", num_over_allocations)
@@ -378,7 +363,9 @@ def test(env, main_model):
     print("Total amount Over-allocated: ", total_over_allocated)
     print("Cumulative Reward: ", cumulative_reward)
 
+    # create the graphs
     if show_plots:
+        # get the min and max y-axis values of the three plots
         min_y_axis = int(min(min(env.prbs_req_s1[:testing_iterations]), min(s1_record),
                              min(env.prbs_req_s2[:testing_iterations]), min(s2_record),
                              min(env.prbs_req_s3[:testing_iterations]), min(s3_record)))
@@ -386,6 +373,7 @@ def test(env, main_model):
                              max(env.prbs_req_s2[:testing_iterations]), max(s2_record),
                              max(env.prbs_req_s3[:testing_iterations]), max(s3_record)))
 
+        # plot 'Required vs Allocated pRBs for Slice 1'
         plot.plot(np.arange(0, testing_iterations), env.prbs_req_s1[:testing_iterations], marker='o', label='Required')
         plot.plot(np.arange(0, testing_iterations), s1_record, marker='x', label='Allocated')
         plot.title('Slice 1', fontsize=18)
@@ -402,9 +390,10 @@ def test(env, main_model):
         plot.legend(fontsize=16)
         plot.tight_layout()
         plot.savefig('Slice_1.jpg')
-        plot.show()
+        # plot.show()
         plot.clf()
 
+        # plot 'Required vs Allocated pRBs for Slice 2'
         plot.plot(np.arange(0, testing_iterations), env.prbs_req_s2[:testing_iterations], marker='o', label='Required')
         plot.plot(np.arange(0, testing_iterations), s2_record, marker='x', label='Allocated')
         plot.title('Slice 2', fontsize=18)
@@ -421,9 +410,10 @@ def test(env, main_model):
         plot.legend(fontsize=16)
         plot.tight_layout()
         plot.savefig('Slice_2.jpg')
-        plot.show()
+        # plot.show()
         plot.clf()
 
+        # plot 'Required vs Allocated pRBs for Slice 3'
         plot.plot(np.arange(0, testing_iterations), env.prbs_req_s3[:testing_iterations], marker='o', label='Required')
         plot.plot(np.arange(0, testing_iterations), s3_record, marker='x', label='Allocated')
         plot.title('Slice 3', fontsize=18)
@@ -440,9 +430,10 @@ def test(env, main_model):
         plot.legend(fontsize=16)
         plot.tight_layout()
         plot.savefig('Slice_3.jpg')
-        plot.show()
+        # plot.show()
         plot.clf()
 
+        # plot 'Allocated pRBs for all the slices'
         plot.plot(np.arange(0, testing_iterations), s1_record, marker='x', label='Slice 1')
         plot.plot(np.arange(0, testing_iterations), s2_record, marker='s', label='Slice 2')
         plot.plot(np.arange(0, testing_iterations), s3_record, marker='p', label='Slice 3')
@@ -457,26 +448,28 @@ def test(env, main_model):
         plot.legend(fontsize=16)
         plot.tight_layout()
         plot.savefig('Slice_All.jpg')
-        plot.show()
+        # plot.show()
         plot.clf()
 
     return cumulative_reward
 
 def main():
 
+    # create environment and agent
     env = RicEnv()
     state = tuple(env.state)
     agent = RicAgent()
 
+    # creating the neural nets
     if build:
-        main_model = agent.build_net(env.state.shape, len(env.action_space)) # build the model
+        # build the model from scratch
+        main_model = agent.build_net(env.state.shape, len(env.action_space))
         target_model = agent.build_net(env.state.shape, len(env.action_space))
     else:
-        main_model = load_model(old_main_model) # load the model
-        # learning_rate = 0.01
-        # optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
-        # main_model.compile(loss=keras.losses.Huber(), optimizer=optimizer, metrics=['accuracy'])
+        # load the model
+        main_model = load_model(old_main_model)
         target_model = load_model(old_target_model)
+    # copy the weights to the target network
     target_model.set_weights(main_model.get_weights())
 
     replay_memory = deque(maxlen=50_000)
@@ -487,7 +480,7 @@ def main():
 
     # Training
     for episode in range(1, num_episodes + 1):
-
+        # initialize the state
         env.init_state()
         state = tuple(env.state)
 
@@ -510,35 +503,36 @@ def main():
 
         # after each episode, update epsilon
         epsilon = initial_epsilon - (episode / num_episodes) * (initial_epsilon - final_epsilon)
-        # Train main network every n episodes
+
+        # train main network every n episodes
         if episode % training_freq == 0:
             agent.train(replay_memory, main_model, target_model)
-
-        # Update target network weights every n episodes
+        # update target network weights every n episodes
         if episode % copying_freq == 0:
             target_model.set_weights(main_model.get_weights())
 
+        # test the DQN every n episodes
         if episode % test_frequency == 0:
             with open('logfile.txt', 'a') as f:
                 f.write("Episode: " + str(episode) + "\n")
-            # Plot reward
+
+            # plot reward curve
             cumulative_reward = test(env, main_model)
             cumulative_rewards.append(cumulative_reward)
             plot.plot(np.arange(test_frequency, episode + test_frequency, test_frequency), cumulative_rewards, marker='o')
             plot.title('Cumulative Reward')
             plot.grid(True)
             plot.savefig('Reward.jpg')
-            plot.show()
+            # plot.show()
             plot.clf()
-            # Save model
-            # main_model.save(new_main_model)
-            # target_model.save(new_target_model)
+
+            # save model
+            main_model.save(new_main_model)
+            target_model.save(new_target_model)
 
 
 
-    # Testing
-    # test_other_inputs(env, main_model, target_model)  # test on hardcoded inputs
-    delete = test(env, main_model)  # test on real data
+    # delete = test(env, main_model)  # uncomment if you want to test without training
 
 if __name__ == "__main__":
     main()
