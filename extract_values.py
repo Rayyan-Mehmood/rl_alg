@@ -2,7 +2,7 @@ import matplotlib.pyplot as plot
 import os
 
 # Define the file name
-file_name = 't39_2_logfile.txt'
+file_name = 'ql_5x5_logfile.txt'
 
 # Function to extract data from a file
 def extract_data(file_name):
@@ -44,8 +44,9 @@ plot.xticks(fontsize=16)
 plot.yticks(fontsize=16)
 plot.xlabel("Episode ($\\times 10^3$)", fontsize=18)
 plot.ylabel("Cumulative Reward", fontsize=18)
-plot.legend(fontsize=16)
 plot.tight_layout()
-plot.savefig('t32_3_reward.jpg')
+base_name = os.path.splitext(file_name)[0]
+base_name = base_name.replace('_logfile', '_reward')
+plot.savefig(f'{base_name}.jpg')
 plot.show()
 plot.clf()

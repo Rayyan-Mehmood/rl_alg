@@ -2,8 +2,9 @@ import re
 import matplotlib.pyplot as plt
 import os
 
-# Define the list of file names
+# Define the list of file names and corresponding labels
 file_names = ['t32_3_logfile.txt', 't37_3_logfile.txt', 't35_7_logfile.txt', 't39_2_logfile.txt']
+labels = ['Discretized to 2', 'Discretized to 5', 'Discretized to 10', 'Discretized to 15']
 
 # Initialize lists to store all extracted data
 all_target_rewards = []
@@ -30,15 +31,16 @@ for file_name in file_names:
 
 # Plot all curves on the same graph
 for i in range(len(file_names)):
-    plt.plot(all_target_rewards[i], all_time_taken_minutes[i], marker='o', label=os.path.basename(file_names[i]))
+    plt.plot(all_time_taken_minutes[i], all_target_rewards[i],  marker='o')
 
 plt.xticks(fontsize=16)
 plt.yticks(fontsize=16)
-plt.xlabel('Cumulative Reward', fontsize=18)
-plt.ylabel('Time Taken (minutes)', fontsize=18)
-plt.title('Time Taken vs Cumulative Reward', fontsize=18)
+plt.ylabel('Cumulative Reward', fontsize=18)
+plt.xlabel('Training Time (minutes)', fontsize=18)
+plt.title('Cumulative Reward vs Training Time', fontsize=18)
 plt.grid(True)
-plt.legend(fontsize=16)
+plt.legend(labels, fontsize=10)
 plt.tight_layout()
+plt.savefig('time_taken.jpg')
 plt.show()
 plt.clf()
