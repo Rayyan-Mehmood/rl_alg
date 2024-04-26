@@ -6,6 +6,7 @@ import matplotlib.pyplot as plot
 import keras
 from keras.models import load_model
 from collections import deque
+import time
 
 
 # Parameters
@@ -455,6 +456,16 @@ def test(env, main_model):
 
 def main():
 
+    # used for measuring the time it takes to reach a reward of 100, 200, etc.
+    start_time = time.time()
+    reached_100 = False
+    reached_200 = False
+    reached_300 = False
+    reached_400 = False
+    reached_500 = False
+    reached_600 = False
+    reached_650 = False
+
     # create environment and agent
     env = RicEnv()
     state = tuple(env.state)
@@ -516,17 +527,75 @@ def main():
             with open('logfile.txt', 'a') as f:
                 f.write("Episode: " + str(episode) + "\n")
 
-            # plot reward curve
+            # plot reward
             cumulative_reward = test(env, main_model)
             cumulative_rewards.append(cumulative_reward)
-            plot.plot(np.arange(test_frequency, episode + test_frequency, test_frequency), cumulative_rewards, marker='o')
+            # measure the time it takes to reach a target cumulative reward and save the model when it does
+            if cumulative_reward >= 100 and not reached_100:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 100 Reward: " + str(total_time) + "\n\n")
+                main_model.save("100_m.h5")
+                target_model.save("100_t.h5")
+                reached_100 = True
+            elif cumulative_reward >= 200 and not reached_200:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 200 Reward: " + str(total_time) + "\n\n")
+                main_model.save("200_m.h5")
+                target_model.save("200_t.h5")
+                reached_200 = True
+            elif cumulative_reward >= 300 and not reached_300:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 300 Reward: " + str(total_time) + "\n\n")
+                main_model.save("300_m.h5")
+                target_model.save("300_t.h5")
+                reached_300 = True
+            elif cumulative_reward >= 400 and not reached_400:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 400 Reward: " + str(total_time) + "\n\n")
+                main_model.save("400_m.h5")
+                target_model.save("400_t.h5")
+                reached_400 = True
+            elif cumulative_reward >= 500 and not reached_500:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 500 Reward: " + str(total_time) + "\n\n")
+                main_model.save("500_m.h5")
+                target_model.save("500_t.h5")
+                reached_500 = True
+            elif cumulative_reward >= 600 and not reached_600:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 600 Reward: " + str(total_time) + "\n\n")
+                main_model.save("600_m.h5")
+                target_model.save("600_t.h5")
+                reached_600 = True
+            elif cumulative_reward >= 650 and not reached_650:
+                end_time = time.time()
+                total_time = end_time - start_time
+                with open('logfile.txt', 'a') as f:
+                    f.write("Time taken for 650 Reward: " + str(total_time) + "\n\n")
+                main_model.save("650_m.h5")
+                target_model.save("650_t.h5")
+                reached_650 = True
+
+            plot.plot(np.arange(test_frequency, episode + test_frequency, test_frequency), cumulative_rewards,
+                      marker='o')
             plot.title('Cumulative Reward')
             plot.grid(True)
             plot.savefig('Reward.jpg')
             # plot.show()
             plot.clf()
-
-            # save model
+            # Save model
             main_model.save(new_main_model)
             target_model.save(new_target_model)
 
